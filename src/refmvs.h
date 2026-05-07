@@ -38,10 +38,11 @@
 #include "src/tables.h"
 
 #define INVALID_MV 0x80008000
+#define INVALID_REF2CUR (-32)
 
 PACKED(typedef struct refmvs_temporal_block {
     mv mv;
-    int8_t ref;
+    uint8_t ref;
 }) refmvs_temporal_block;
 CHECK_SIZE(refmvs_temporal_block, 5);
 
@@ -72,8 +73,8 @@ typedef struct refmvs_frame {
     uint8_t sign_bias[7], mfmv_sign[7];
     int8_t pocdiff[7];
     uint8_t mfmv_ref[3];
-    int mfmv_ref2cur[3];
-    int mfmv_ref2ref[3][7];
+    int8_t mfmv_ref2cur[3];
+    uint8_t mfmv_ref2ref[3][7];
     int n_mfmvs;
 
     int n_blocks;
@@ -90,7 +91,7 @@ typedef struct refmvs_tile {
     const refmvs_frame *rf;
     refmvs_block *r[32 + 5];
     refmvs_temporal_block *rp_proj;
-    struct refmvs_tile_range {
+    struct {
         int start, end;
     } tile_col, tile_row;
 } refmvs_tile;
@@ -129,9 +130,9 @@ typedef struct Dav1dRefmvsDSPContext {
 int dav1d_refmvs_init_frame(refmvs_frame *rf,
                             const Dav1dSequenceHeader *seq_hdr,
                             const Dav1dFrameHeader *frm_hdr,
-                            const unsigned ref_poc[7],
+                            const uint8_t ref_poc[7],
                             refmvs_temporal_block *rp,
-                            const unsigned ref_ref_poc[7][7],
+                            const uint8_t ref_ref_poc[7][7],
                             /*const*/ refmvs_temporal_block *const rp_ref[7],
                             int n_tile_threads, int n_frame_threads);
 
@@ -171,6 +172,7 @@ void dav1d_refmvs_find(const refmvs_tile *rt,
 
 void dav1d_refmvs_dsp_init(Dav1dRefmvsDSPContext *dsp);
 void dav1d_refmvs_dsp_init_arm(Dav1dRefmvsDSPContext *dsp);
+void dav1d_refmvs_dsp_init_loongarch(Dav1dRefmvsDSPContext *dsp);
 void dav1d_refmvs_dsp_init_x86(Dav1dRefmvsDSPContext *dsp);
 
 #endif /* DAV1D_SRC_REF_MVS_H */

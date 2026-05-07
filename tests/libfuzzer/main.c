@@ -40,14 +40,6 @@
 
 // expects ivf input
 
-int main_error(int ret, uint8_t *data, FILE *f);
-
-int main_error(const int ret, uint8_t *const data, FILE *const f) {
-    free(data);
-    if (f) fclose(f);
-    return ret;
-}
-
 int main(int argc, char *argv[]) {
     int ret = -1;
     FILE *f = NULL;
@@ -68,38 +60,41 @@ int main(int argc, char *argv[]) {
 
     if (!(f = fopen(filename, "rb"))) {
         fprintf(stderr, "failed to open %s: %s\n", filename, strerror(errno));
-        return main_error(ret, data, f);
+        goto error;
     }
 
     if (fseeko(f, 0, SEEK_END) == -1) {
         fprintf(stderr, "fseek(%s, 0, SEEK_END) failed: %s\n", filename,
                 strerror(errno));
-        return main_error(ret, data, f);
+        goto error;
     }
     if ((fsize = ftello(f)) == -1) {
         fprintf(stderr, "ftell(%s) failed: %s\n", filename, strerror(errno));
-        return main_error(ret, data, f);
+        goto error;
     }
     rewind(f);
 
     if (fsize < 0 || fsize > INT_MAX) {
         fprintf(stderr, "%s is too large: %"PRId64"\n", filename, fsize);
-        return main_error(ret, data, f);
+        goto error;
     }
     size = (size_t)fsize;
 
     if (!(data = malloc(size))) {
         fprintf(stderr, "failed to allocate: %zu bytes\n", size);
-        return main_error(ret, data, f);
+        goto error;
     }
 
     if (fread(data, size, 1, f) == size) {
         fprintf(stderr, "failed to read %zu bytes from %s: %s\n", size,
                 filename, strerror(errno));
-        return main_error(ret, data, f);
+        goto error;
     }
 
     ret = LLVMFuzzerTestOneInput(data, size);
 
-    return main_error(ret, data, f);
+error:
+    free(data);
+    if (f) fclose(f);
+    return ret;
 }

@@ -31,6 +31,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Constants from Section 3. "Symbols and abbreviated terms"
 #define DAV1D_MAX_CDEF_STRENGTHS 8
 #define DAV1D_MAX_OPERATING_POINTS 32
@@ -93,8 +97,8 @@ enum Dav1dWarpedMotionType {
 typedef struct Dav1dWarpedMotionParams {
     enum Dav1dWarpedMotionType type;
     int32_t matrix[6];
-    union Dav1dWarpedMotionParams_u {
-        struct Dav1dWarpedMotionParams_u_p {
+    union {
+        struct {
             int16_t alpha, beta, gamma, delta;
         } p;
         int16_t abcd[4];
@@ -183,14 +187,10 @@ typedef struct Dav1dContentLightLevel {
 } Dav1dContentLightLevel;
 
 typedef struct Dav1dMasteringDisplay {
-    ///< 0.16 fixed point
-    uint16_t primaries[3][2];
-    ///< 0.16 fixed point
-    uint16_t white_point[2];
-    ///< 24.8 fixed point
-    uint32_t max_luminance;
-    ///< 18.14 fixed point
-    uint32_t min_luminance;
+    uint16_t primaries[3][2]; ///< 0.16 fixed point
+    uint16_t white_point[2]; ///< 0.16 fixed point
+    uint32_t max_luminance; ///< 24.8 fixed point
+    uint32_t min_luminance; ///< 18.14 fixed point
 } Dav1dMasteringDisplay;
 
 typedef struct Dav1dITUTT35 {
@@ -333,7 +333,7 @@ typedef struct Dav1dFilmGrainData {
 } Dav1dFilmGrainData;
 
 typedef struct Dav1dFrameHeader {
-    struct Dav1dFrameHeader_film_grain {
+    struct {
         Dav1dFilmGrainData data;
         uint8_t present, update;
     } film_grain; ///< film grain parameters
@@ -361,7 +361,7 @@ typedef struct Dav1dFrameHeader {
     } operating_points[DAV1D_MAX_OPERATING_POINTS];
     uint8_t refresh_frame_flags;
     int render_width, render_height;
-    struct Dav1dFrameHeader_super_res {
+    struct {
         uint8_t width_scale_denominator;
         uint8_t enabled;
     } super_res;
@@ -374,7 +374,7 @@ typedef struct Dav1dFrameHeader {
     uint8_t switchable_motion_mode;
     uint8_t use_ref_frame_mvs;
     uint8_t refresh_context;
-    struct Dav1dFrameHeader_tiling {
+    struct {
         uint8_t uniform;
         uint8_t n_bytes;
         uint8_t min_log2_cols, max_log2_cols, log2_cols, cols;
@@ -383,30 +383,30 @@ typedef struct Dav1dFrameHeader {
         uint16_t row_start_sb[DAV1D_MAX_TILE_ROWS + 1];
         uint16_t update;
     } tiling;
-    struct Dav1dFrameHeader_quant {
+    struct {
         uint8_t yac;
         int8_t ydc_delta;
         int8_t udc_delta, uac_delta, vdc_delta, vac_delta;
         uint8_t qm, qm_y, qm_u, qm_v;
     } quant;
-    struct Dav1dFrameHeader_segmentation {
+    struct {
         uint8_t enabled, update_map, temporal, update_data;
         Dav1dSegmentationDataSet seg_data;
         uint8_t lossless[DAV1D_MAX_SEGMENTS], qidx[DAV1D_MAX_SEGMENTS];
     } segmentation;
-    struct Dav1dFrameHeader_delta {
-        struct Dav1dFrameHeader_delta_q {
+    struct {
+        struct {
             uint8_t present;
             uint8_t res_log2;
         } q;
-        struct Dav1dFrameHeader_delta_lf {
+        struct {
             uint8_t present;
             uint8_t res_log2;
             uint8_t multi;
         } lf;
     } delta;
     uint8_t all_lossless;
-    struct Dav1dFrameHeader_loopfilter {
+    struct {
         uint8_t level_y[2 /* dir */];
         uint8_t level_u, level_v;
         uint8_t mode_ref_delta_enabled;
@@ -414,13 +414,13 @@ typedef struct Dav1dFrameHeader {
         Dav1dLoopfilterModeRefDeltas mode_ref_deltas;
         uint8_t sharpness;
     } loopfilter;
-    struct Dav1dFrameHeader_cdef {
+    struct {
         uint8_t damping;
         uint8_t n_bits;
         uint8_t y_strength[DAV1D_MAX_CDEF_STRENGTHS];
         uint8_t uv_strength[DAV1D_MAX_CDEF_STRENGTHS];
     } cdef;
-    struct Dav1dFrameHeader_restoration {
+    struct {
         enum Dav1dRestorationType type[3 /* plane */];
         uint8_t unit_size[2 /* y, uv */];
     } restoration;
@@ -432,5 +432,9 @@ typedef struct Dav1dFrameHeader {
     uint8_t reduced_txtp_set;
     Dav1dWarpedMotionParams gmv[DAV1D_REFS_PER_FRAME];
 } Dav1dFrameHeader;
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* DAV1D_HEADERS_H */

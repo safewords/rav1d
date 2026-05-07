@@ -1,6 +1,6 @@
 /*
- * Copyright © 2019, VideoLAN and dav1d authors
- * Copyright © 2019, Janne Grunau
+ * Copyright © 2024, VideoLAN and dav1d authors
+ * Copyright © 2024, Two Orioles, LLC
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,14 +25,41 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef DAV1D_SRC_PPC_CPU_H
-#define DAV1D_SRC_PPC_CPU_H
+#include "config.h"
 
-enum CpuFlags {
-    DAV1D_PPC_CPU_FLAG_VSX = 1 << 0,
-    DAV1D_PPC_CPU_FLAG_PWR9 = 1 << 1,
+#include <string.h>
+
+#include "ctx.h"
+
+static void memset_w1(void *const ptr, const int value) {
+    set_ctx1((uint8_t *) ptr, 0, value);
+}
+
+static void memset_w2(void *const ptr, const int value) {
+    set_ctx2((uint8_t *) ptr, 0, value);
+}
+
+static void memset_w4(void *const ptr, const int value) {
+    set_ctx4((uint8_t *) ptr, 0, value);
+}
+
+static void memset_w8(void *const ptr, const int value) {
+    set_ctx8((uint8_t *) ptr, 0, value);
+}
+
+static void memset_w16(void *const ptr, const int value) {
+    set_ctx16((uint8_t *) ptr, 0, value);
+}
+
+static void memset_w32(void *const ptr, const int value) {
+    set_ctx32((uint8_t *) ptr, 0, value);
+}
+
+const dav1d_memset_pow2_fn dav1d_memset_pow2[6] = {
+    memset_w1,
+    memset_w2,
+    memset_w4,
+    memset_w8,
+    memset_w16,
+    memset_w32
 };
-
-unsigned dav1d_get_cpu_flags_ppc(void);
-
-#endif /* DAV1D_SRC_PPC_CPU_H */

@@ -32,7 +32,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 
 #include "output/muxer.h"
 
@@ -93,12 +92,6 @@ static int write_header(Y4m2OutputContext *const c, const Dav1dPicture *const p)
     return 0;
 }
 
-static int y4m2_write_error(Dav1dPicture *const p) {
-    dav1d_picture_unref(p);
-    fprintf(stderr, "Failed to write frame data: %s\n", strerror(errno));
-    return -1;
-}
-
 static int y4m2_write(Y4m2OutputContext *const c, Dav1dPicture *const p) {
     if (c->first) {
         c->first = 0;
@@ -113,7 +106,7 @@ static int y4m2_write(Y4m2OutputContext *const c, Dav1dPicture *const p) {
     ptr = p->data[0];
     for (int y = 0; y < p->p.h; y++) {
         if (fwrite(ptr, p->p.w << hbd, 1, c->f) != 1)
-            return y4m2_write_error(p);
+            goto error;
         ptr += p->stride[0];
     }
 
@@ -127,7 +120,7 @@ static int y4m2_write(Y4m2OutputContext *const c, Dav1dPicture *const p) {
             ptr = p->data[pl];
             for (int y = 0; y < ch; y++) {
                 if (fwrite(ptr, cw << hbd, 1, c->f) != 1)
-                    return y4m2_write_error(p);
+                    goto error;
                 ptr += p->stride[1];
             }
         }
@@ -135,6 +128,11 @@ static int y4m2_write(Y4m2OutputContext *const c, Dav1dPicture *const p) {
 
     dav1d_picture_unref(p);
     return 0;
+
+error:
+    dav1d_picture_unref(p);
+    fprintf(stderr, "Failed to write frame data: %s\n", strerror(errno));
+    return -1;
 }
 
 static void y4m2_close(Y4m2OutputContext *const c) {

@@ -48,7 +48,7 @@ typedef const void *const_left_pixel_row;
 
 typedef union LooprestorationParams {
     ALIGN(int16_t filter[2][8], 16);
-    struct LooprestorationParams_sgr {
+    struct {
         uint32_t s0, s1;
         int16_t w0, w1;
     } sgr;

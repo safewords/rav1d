@@ -31,7 +31,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 
 #include "output/muxer.h"
 
@@ -53,12 +52,6 @@ static int yuv_open(YuvOutputContext *const c, const char *const file,
     return 0;
 }
 
-static int yuv_write_error(Dav1dPicture *const p) {
-    dav1d_picture_unref(p);
-    fprintf(stderr, "Failed to write frame data: %s\n", strerror(errno));
-    return -1;
-}
-
 static int yuv_write(YuvOutputContext *const c, Dav1dPicture *const p) {
     uint8_t *ptr;
     const int hbd = p->p.bpc > 8;
@@ -66,7 +59,7 @@ static int yuv_write(YuvOutputContext *const c, Dav1dPicture *const p) {
     ptr = p->data[0];
     for (int y = 0; y < p->p.h; y++) {
         if (fwrite(ptr, p->p.w << hbd, 1, c->f) != 1)
-            return yuv_write_error(p);
+            goto error;
         ptr += p->stride[0];
     }
 
@@ -80,7 +73,7 @@ static int yuv_write(YuvOutputContext *const c, Dav1dPicture *const p) {
             ptr = p->data[pl];
             for (int y = 0; y < ch; y++) {
                 if (fwrite(ptr, cw << hbd, 1, c->f) != 1)
-                    return yuv_write_error(p);
+                    goto error;
                 ptr += p->stride[1];
             }
         }
@@ -88,6 +81,11 @@ static int yuv_write(YuvOutputContext *const c, Dav1dPicture *const p) {
 
     dav1d_picture_unref(p);
     return 0;
+
+error:
+    dav1d_picture_unref(p);
+    fprintf(stderr, "Failed to write frame data: %s\n", strerror(errno));
+    return -1;
 }
 
 static void yuv_close(YuvOutputContext *const c) {

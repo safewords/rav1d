@@ -101,7 +101,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     dav1d_version();
 
-    if (size < 32) return 0;
+    if (size < 32) goto end;
 #ifdef DAV1D_ALLOC_FAIL
     unsigned h = djb_xor(ptr, 32);
     unsigned seed = h;
@@ -129,7 +129,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 #endif
 
     err = dav1d_open(&ctx, &settings);
-    if (err < 0) return 0;
+    if (err < 0) goto end;
 
     while (ptr <= data + size - 12) {
         Dav1dData buf;
@@ -144,7 +144,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         if (!frame_size) continue;
 
         if (!have_seq_hdr) {
-            Dav1dSequenceHeader seq = { 0 };
+            Dav1dSequenceHeader seq;
             int err = dav1d_parse_sequence_header(&seq, ptr, frame_size);
             // skip frames until we see a sequence header
             if  (err != 0) {
@@ -156,10 +156,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
         // copy frame data to a new buffer to catch reads past the end of input
         p = dav1d_data_create(&buf, frame_size);
-        if (!p) {
-            dav1d_close(&ctx);
-            return 0;
-        }
+        if (!p) goto cleanup;
         memcpy(p, ptr, frame_size);
         ptr += frame_size;
 
@@ -195,6 +192,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         return 0;
     }
 
+cleanup:
     dav1d_close(&ctx);
+end:
     return 0;
 }

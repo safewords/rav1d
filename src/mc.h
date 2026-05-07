@@ -143,7 +143,6 @@ typedef decl_resize_fn(*resize_fn);
     init_8tap_gen(mc,  opt); \
     init_8tap_gen(mct, opt)
 
-
 typedef struct Dav1dMCDSPContext {
     mc_fn mc[N_2D_FILTERS];
     mc_scaled_fn mc_scaled[N_2D_FILTERS];

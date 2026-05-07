@@ -124,7 +124,7 @@ struct Dav1dContext {
     // dummy is a pointer to prevent compiler errors about atomic_load()
     // not taking const arguments
     atomic_int flush_mem, *flush;
-    struct Dav1dContext_frame_thread {
+    struct {
         Dav1dThreadPicture *out_delayed;
         unsigned next;
     } frame_thread;
@@ -141,8 +141,8 @@ struct Dav1dContext {
         // See src/thread_task.c:reset_task_cur().
         atomic_uint reset_task_cur;
         atomic_int cond_signaled;
-        struct TaskThreadData_delayed_fg {
-            int exec;
+        struct {
+            int exec, finished;
             pthread_cond_t cond;
             const Dav1dPicture *in;
             Dav1dPicture *out;
@@ -165,11 +165,11 @@ struct Dav1dContext {
     // reference/entropy state
     Dav1dMemPool *segmap_pool;
     Dav1dMemPool *refmvs_pool;
-    struct Dav1dContext_refs {
+    struct {
         Dav1dThreadPicture p;
         Dav1dRef *segmap;
         Dav1dRef *refmvs;
-        unsigned refpoc[7];
+        uint8_t refpoc[7];
     } refs[8];
     Dav1dMemPool *cdf_pool;
     CdfThreadContext cdf[8];
@@ -198,6 +198,7 @@ struct Dav1dContext {
     Dav1dLogger logger;
 
     Dav1dMemPool *picture_pool;
+    Dav1dMemPool *pic_ctx_pool;
 };
 
 struct Dav1dTask {
@@ -225,7 +226,7 @@ struct Dav1dFrameContext {
     Dav1dRef *cur_segmap_ref, *prev_segmap_ref;
     uint8_t *cur_segmap;
     const uint8_t *prev_segmap;
-    unsigned refpoc[7], refrefpoc[7][7];
+    uint8_t refpoc[7], refrefpoc[7][7];
     uint8_t gmv_warp_allowed[7];
     CdfThreadContext in_cdf, out_cdf;
     struct Dav1dTileGroup *tile;
@@ -243,7 +244,7 @@ struct Dav1dFrameContext {
     Dav1dTileState *ts;
     int n_ts;
     const Dav1dDSPContext *dsp;
-    struct Dav1dFrameContext_bd_fn {
+    struct {
         recon_b_intra_fn recon_b_intra;
         recon_b_inter_fn recon_b_inter;
         filter_sbrow_fn filter_sbrow;
@@ -272,7 +273,7 @@ struct Dav1dFrameContext {
     uint8_t jnt_weights[7][7];
     int bitdepth_max;
 
-    struct Dav1dFrameContext_frame_thread {
+    struct {
         int next_tile_row[2 /* 0: reconstruction, 1: entropy */];
         atomic_int entropy_progress;
         atomic_int deblock_progress; // in sby units
@@ -292,7 +293,7 @@ struct Dav1dFrameContext {
     } frame_thread;
 
     // loopfilter
-    struct Dav1dFrameContext_lf {
+    struct {
         uint8_t (*level)[4];
         Av1Filter *mask;
         Av1Restoration *lr_mask;
@@ -301,7 +302,7 @@ struct Dav1dFrameContext {
         int cdef_buf_sbh;
         int lr_buf_plane_sz[2]; /* (stride*sbh*4) << sb128 if n_tc > 1, else stride*4 */
         int re_sz /* h */;
-        ALIGN(Av1FilterLUT lim_lut, 16);
+        Av1FilterLUT lim_lut;
         ALIGN(uint8_t lvl[8 /* seg_id */][4 /* dir */][8 /* ref */][2 /* is_gmv */], 16);
         int last_sharpness;
         uint8_t *tx_lpf_right_edge[2];
@@ -315,11 +316,10 @@ struct Dav1dFrameContext {
         int start_of_tile_row_sz;
         int need_cdef_lpf_copy;
         pixel *p[3], *sr_p[3];
-        Av1Filter *mask_ptr, *prev_mask_ptr;
         int restore_planes; // enum LrRestorePlanes
     } lf;
 
-    struct Dav1dFrameContext_task_thread {
+    struct {
         pthread_mutex_t lock;
         pthread_cond_t cond;
         struct TaskThreadData *ttd;
@@ -337,7 +337,7 @@ struct Dav1dFrameContext {
         // "prev_t" variable. This is needed to not loose the tasks in
         // [head;cur-1] when picking one for execution.
         struct Dav1dTask *task_cur_prev;
-        struct Dav1dFrameContext_task_thread_pending_tasks { // async task insertion
+        struct { // async task insertion
             atomic_int merge;
             pthread_mutex_t lock;
             Dav1dTask *head, *tail;
@@ -355,14 +355,14 @@ struct Dav1dTileState {
     CdfContext cdf;
     MsacContext msac;
 
-    struct Dav1dTileState_tiling {
+    struct {
         int col_start, col_end, row_start, row_end; // in 4px units
         int col, row; // in tile units
     } tiling;
 
     // in sby units, TILE_ERROR after a decoding error
     atomic_int progress[2 /* 0: reconstruction, 1: entropy */];
-    struct Dav1dTileState_frame_thread {
+    struct {
         uint8_t *pal_idx;
         int16_t *cbi;
         coef *cf;
@@ -376,7 +376,10 @@ struct Dav1dTileState {
     const uint16_t (*dq)[3][2];
     int last_qidx;
 
-    int8_t last_delta_lf[4];
+    union {
+        int8_t i8[4];
+        uint32_t u32;
+    } last_delta_lf;
     ALIGN(uint8_t lflvlmem[8 /* seg_id */][4 /* dir */][8 /* ref */][2 /* is_gmv */], 16);
     const uint8_t (*lflvl)[4][8][2];
 
@@ -399,7 +402,7 @@ struct Dav1dTaskContext {
         uint16_t al_pal_16bpc[2 /* a/l */][32 /* bx/y4 */][3 /* plane */][8 /* palette_idx */];
     };
     uint8_t pal_sz_uv[2 /* a/l */][32 /* bx4/by4 */];
-    ALIGN(union, 64) Dav1dTaskContext_scratch {
+    ALIGN(union, 64) {
         struct {
             union {
                 uint8_t  lap_8bpc [128 * 32];
@@ -453,10 +456,10 @@ struct Dav1dTaskContext {
     // keeps it accessible
     enum Filter2d tl_4x4_filter;
 
-    struct Dav1dTaskContext_frame_thread {
+    struct {
         int pass;
     } frame_thread;
-    struct Dav1dTaskContext_task_thread {
+    struct {
         struct thread_data td;
         struct TaskThreadData *ttd;
         struct FrameTileThreadData *fttd;

@@ -49,7 +49,7 @@ static inline int get_min_mv_val(const int idx) {
     else                return (idx - 36) * 10000;
 }
 
-static inline void gen_tmv(refmvs_temporal_block *const rb, const int *ref2ref) {
+static inline void gen_tmv(refmvs_temporal_block *const rb, const uint8_t *const ref2ref) {
     rb->ref = rnd() % 7;
     if (!rb->ref) return;
     static const int x_prob[] = {
@@ -321,7 +321,7 @@ static void check_splat_mv(const Dav1dRefmvsDSPContext *const c) {
             const int w_uint32 = w * sizeof(refmvs_block) / sizeof(uint32_t);
             for (int h = h_min; h <= h_max; h *= 2) {
                 const int offset = (int) ((unsigned) w * rnd()) & 31;
-                union tmp {
+                union {
                     refmvs_block rmv;
                     uint32_t u32[3];
                 } ALIGN(tmp, 16);

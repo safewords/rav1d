@@ -107,7 +107,9 @@ decl_itx_fns(ssse3);
 decl_itx_fn(dav1d_inv_txfm_add_wht_wht_4x4_16bpc_avx2);
 decl_itx_fn(BF(dav1d_inv_txfm_add_wht_wht_4x4, sse2));
 
-static ALWAYS_INLINE void itx_dsp_init_x86(Dav1dInvTxfmDSPContext *const c, const int bpc) {
+static ALWAYS_INLINE void itx_dsp_init_x86(Dav1dInvTxfmDSPContext *const c,
+                                           const int bpc, int *const all_simd)
+{
 #define assign_itx_bpc_fn(pfx, w, h, type, type_enum, bpc, ext) \
     c->itxfm_add[pfx##TX_##w##X##h][type_enum] = \
         BF_BPC(dav1d_inv_txfm_add_##type##_##w##x##h, bpc, ext)
@@ -167,6 +169,7 @@ static ALWAYS_INLINE void itx_dsp_init_x86(Dav1dInvTxfmDSPContext *const c, cons
     assign_itx1_fn (R, 64, 16, ssse3);
     assign_itx1_fn (R, 64, 32, ssse3);
     assign_itx1_fn ( , 64, 64, ssse3);
+    *all_simd = 1;
 #endif
 
     if (!(flags & DAV1D_X86_CPU_FLAG_SSE41)) return;
@@ -192,6 +195,7 @@ static ALWAYS_INLINE void itx_dsp_init_x86(Dav1dInvTxfmDSPContext *const c, cons
         assign_itx1_fn (R, 64, 16, sse4);
         assign_itx1_fn (R, 64, 32, sse4);
         assign_itx1_fn (,  64, 64, sse4);
+        *all_simd = 1;
     }
 #endif
 
@@ -207,15 +211,15 @@ static ALWAYS_INLINE void itx_dsp_init_x86(Dav1dInvTxfmDSPContext *const c, cons
     assign_itx16_fn(R,  8,  4, avx2);
     assign_itx16_fn( ,  8,  8, avx2);
     assign_itx16_fn(R,  8, 16, avx2);
+    assign_itx2_fn (R,  8, 32, avx2);
     assign_itx16_fn(R, 16,  4, avx2);
     assign_itx16_fn(R, 16,  8, avx2);
     assign_itx12_fn( , 16, 16, avx2);
-    assign_itx2_fn (R,  8, 32, avx2);
     assign_itx2_fn (R, 16, 32, avx2);
+    assign_itx1_fn (R, 16, 64, avx2);
     assign_itx2_fn (R, 32,  8, avx2);
     assign_itx2_fn (R, 32, 16, avx2);
     assign_itx2_fn ( , 32, 32, avx2);
-    assign_itx1_fn (R, 16, 64, avx2);
     assign_itx1_fn (R, 32, 64, avx2);
     assign_itx1_fn (R, 64, 16, avx2);
     assign_itx1_fn (R, 64, 32, avx2);
@@ -228,15 +232,15 @@ static ALWAYS_INLINE void itx_dsp_init_x86(Dav1dInvTxfmDSPContext *const c, cons
         assign_itx16_bpc_fn(R,  8,  4, 10, avx2);
         assign_itx16_bpc_fn( ,  8,  8, 10, avx2);
         assign_itx16_bpc_fn(R,  8, 16, 10, avx2);
+        assign_itx2_bpc_fn (R,  8, 32, 10, avx2);
         assign_itx16_bpc_fn(R, 16,  4, 10, avx2);
         assign_itx16_bpc_fn(R, 16,  8, 10, avx2);
         assign_itx12_bpc_fn( , 16, 16, 10, avx2);
-        assign_itx2_bpc_fn (R,  8, 32, 10, avx2);
         assign_itx2_bpc_fn (R, 16, 32, 10, avx2);
+        assign_itx1_bpc_fn (R, 16, 64, 10, avx2);
         assign_itx2_bpc_fn (R, 32,  8, 10, avx2);
         assign_itx2_bpc_fn (R, 32, 16, 10, avx2);
         assign_itx2_bpc_fn ( , 32, 32, 10, avx2);
-        assign_itx1_bpc_fn (R, 16, 64, 10, avx2);
         assign_itx1_bpc_fn (R, 32, 64, 10, avx2);
         assign_itx1_bpc_fn (R, 64, 16, 10, avx2);
         assign_itx1_bpc_fn (R, 64, 32, 10, avx2);
@@ -248,10 +252,10 @@ static ALWAYS_INLINE void itx_dsp_init_x86(Dav1dInvTxfmDSPContext *const c, cons
         assign_itx16_bpc_fn(R,  8,  4, 12, avx2);
         assign_itx16_bpc_fn( ,  8,  8, 12, avx2);
         assign_itx16_bpc_fn(R,  8, 16, 12, avx2);
+        assign_itx2_bpc_fn (R,  8, 32, 12, avx2);
         assign_itx16_bpc_fn(R, 16,  4, 12, avx2);
         assign_itx16_bpc_fn(R, 16,  8, 12, avx2);
         assign_itx12_bpc_fn( , 16, 16, 12, avx2);
-        assign_itx2_bpc_fn (R,  8, 32, 12, avx2);
         assign_itx2_bpc_fn (R, 32,  8, 12, avx2);
         assign_itx_bpc_fn(R, 16, 32, identity_identity, IDTX, 12, avx2);
         assign_itx_bpc_fn(R, 32, 16, identity_identity, IDTX, 12, avx2);
@@ -268,15 +272,15 @@ static ALWAYS_INLINE void itx_dsp_init_x86(Dav1dInvTxfmDSPContext *const c, cons
     assign_itx16_fn(R,  8,  4, avx512icl);
     assign_itx16_fn( ,  8,  8, avx512icl);
     assign_itx16_fn(R,  8, 16, avx512icl);
+    assign_itx2_fn (R,  8, 32, avx512icl);
     assign_itx16_fn(R, 16,  4, avx512icl);
     assign_itx16_fn(R, 16,  8, avx512icl);
     assign_itx12_fn( , 16, 16, avx512icl);
-    assign_itx2_fn (R,  8, 32, avx512icl);
     assign_itx2_fn (R, 16, 32, avx512icl);
+    assign_itx1_fn (R, 16, 64, avx512icl);
     assign_itx2_fn (R, 32,  8, avx512icl);
     assign_itx2_fn (R, 32, 16, avx512icl);
     assign_itx2_fn ( , 32, 32, avx512icl);
-    assign_itx1_fn (R, 16, 64, avx512icl);
     assign_itx1_fn (R, 32, 64, avx512icl);
     assign_itx1_fn (R, 64, 16, avx512icl);
     assign_itx1_fn (R, 64, 32, avx512icl);
@@ -285,9 +289,9 @@ static ALWAYS_INLINE void itx_dsp_init_x86(Dav1dInvTxfmDSPContext *const c, cons
     if (bpc == 10) {
         assign_itx16_bpc_fn( ,  8,  8, 10, avx512icl);
         assign_itx16_bpc_fn(R,  8, 16, 10, avx512icl);
+        assign_itx2_bpc_fn (R,  8, 32, 10, avx512icl);
         assign_itx16_bpc_fn(R, 16,  8, 10, avx512icl);
         assign_itx12_bpc_fn( , 16, 16, 10, avx512icl);
-        assign_itx2_bpc_fn (R,  8, 32, 10, avx512icl);
         assign_itx2_bpc_fn (R, 16, 32, 10, avx512icl);
         assign_itx2_bpc_fn (R, 32,  8, 10, avx512icl);
         assign_itx2_bpc_fn (R, 32, 16, 10, avx512icl);

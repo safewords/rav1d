@@ -49,7 +49,9 @@ decl_itx_fn(BF(dav1d_inv_txfm_add_dct_dct_64x16, neon));
 decl_itx_fn(BF(dav1d_inv_txfm_add_dct_dct_64x32, neon));
 decl_itx_fn(BF(dav1d_inv_txfm_add_dct_dct_64x64, neon));
 
-static ALWAYS_INLINE void itx_dsp_init_arm(Dav1dInvTxfmDSPContext *const c, int bpc) {
+static ALWAYS_INLINE void itx_dsp_init_arm(Dav1dInvTxfmDSPContext *const c, int bpc,
+                                           int *const all_simd)
+{
     const unsigned flags = dav1d_get_cpu_flags();
 
     if (!(flags & DAV1D_ARM_CPU_FLAG_NEON)) return;
@@ -64,17 +66,18 @@ static ALWAYS_INLINE void itx_dsp_init_arm(Dav1dInvTxfmDSPContext *const c, int 
     assign_itx16_fn(R,  8,  4, neon);
     assign_itx16_fn( ,  8,  8, neon);
     assign_itx16_fn(R,  8, 16, neon);
+    assign_itx2_fn (R,  8, 32, neon);
     assign_itx16_fn(R, 16,  4, neon);
     assign_itx16_fn(R, 16,  8, neon);
     assign_itx12_fn( , 16, 16, neon);
-    assign_itx2_fn (R,  8, 32, neon);
     assign_itx2_fn (R, 16, 32, neon);
+    assign_itx1_fn (R, 16, 64, neon);
     assign_itx2_fn (R, 32,  8, neon);
     assign_itx2_fn (R, 32, 16, neon);
     assign_itx2_fn ( , 32, 32, neon);
-    assign_itx1_fn (R, 16, 64, neon);
     assign_itx1_fn (R, 32, 64, neon);
     assign_itx1_fn (R, 64, 16, neon);
     assign_itx1_fn (R, 64, 32, neon);
     assign_itx1_fn ( , 64, 64, neon);
+    *all_simd = 1;
 }
