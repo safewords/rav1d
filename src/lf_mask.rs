@@ -134,14 +134,32 @@ fn decomp_tx(
         let lh = cmp::min(2, t_dim.lh);
 
         debug_assert!(t_dim.w == 1 << t_dim.lw && t_dim.w <= 16);
-        CaseSet::<16, false>::one((), t_dim.w as usize, x0, |case, ()| {
-            for y in 0..t_dim.h as usize {
-                case.set(&mut txa[0][0][y0 + y], MaybeUninit::new(lw));
-                case.set(&mut txa[1][0][y0 + y], MaybeUninit::new(lh));
-                txa[0][1][y0 + y][x0].write(t_dim.w);
+        let h = t_dim.h as usize;
+        let w = t_dim.w as usize;
+        // Split `txa`'s `[edge][txsz]` dims into disjoint sub-arrays up front,
+        // then re-borrow each one's `y0..y0 + h` row range (a single bounds
+        // check per plane; always in range by construction of the recursive
+        // decomposition documented above: `y0 + h <= 32` always holds).
+        // Walking those subslices with a plain iterator, in one shared loop
+        // (as before the split, to avoid duplicating the `CaseSetter::set`
+        // dispatch per plane), lets LLVM see the per-row accesses as
+        // bounds-check-free slice walks instead of `txa[..][..][y0 + y]`
+        // indexing, which it can't otherwise prove in-bounds since `y0`/`h`
+        // are runtime values threaded through the recursion.
+        let [e0, e1] = txa.each_mut();
+        let [t00, t01] = e0.each_mut();
+        let [t10, _t11] = e1.each_mut();
+        let t00 = &mut t00[y0..y0 + h];
+        let t01 = &mut t01[y0..y0 + h];
+        let t10 = &mut t10[y0..y0 + h];
+        CaseSet::<16, false>::one((), w, x0, |case, ()| {
+            for ((row00, row10), row01) in t00.iter_mut().zip(t10.iter_mut()).zip(t01.iter_mut()) {
+                case.set(row00, MaybeUninit::new(lw));
+                case.set(row10, MaybeUninit::new(lh));
+                row01[x0].write(t_dim.w);
             }
         });
-        CaseSet::<16, false>::one((), t_dim.w as usize, x0, |case, ()| {
+        CaseSet::<16, false>::one((), w, x0, |case, ()| {
             case.set(&mut txa[1][1][y0], MaybeUninit::new(t_dim.h));
         });
     };
