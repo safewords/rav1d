@@ -272,20 +272,30 @@ fn read_tx_tree(
         }
         t.b.y -= txsh;
     } else {
-        CaseSet::<16, false>::many(
-            [(&t.l, txh), (&f.a[t.a], txw)],
-            [t_dim.h as usize, t_dim.w as usize],
-            [by4 as usize, bx4 as usize],
-            |case, (dir, val)| {
-                let tx = if is_split {
-                    TxfmSize::S4x4
-                } else {
-                    // TODO check unwrap is optimized out
-                    TxfmSize::from_repr(val as _).unwrap()
-                };
-                case.set_disjoint(&dir.tx, tx);
-            },
-        );
+        // Unrolled from a `CaseSet::many` over `[(&t.l, txh), (&f.a[t.a], txw)]`
+        // into 2 direct `CaseSet::one` calls (mirroring the 2 separate
+        // `case_set_upto16` macro invocations in the C code, rather than a
+        // shared generic loop over an array of `(dir, val)` tuples) to avoid
+        // the tuple-destructuring closure and array/zip iteration overhead on
+        // this hot leaf path.
+        let tx_l = if is_split {
+            TxfmSize::S4x4
+        } else {
+            // TODO check unwrap is optimized out
+            TxfmSize::from_repr(txh as _).unwrap()
+        };
+        CaseSet::<16, false>::one((), t_dim.h as usize, by4 as usize, |case, ()| {
+            case.set_disjoint(&t.l.tx, tx_l);
+        });
+        let tx_a = if is_split {
+            TxfmSize::S4x4
+        } else {
+            // TODO check unwrap is optimized out
+            TxfmSize::from_repr(txw as _).unwrap()
+        };
+        CaseSet::<16, false>::one((), t_dim.w as usize, bx4 as usize, |case, ()| {
+            case.set_disjoint(&f.a[t.a].tx, tx_a);
+        });
     };
 }
 
