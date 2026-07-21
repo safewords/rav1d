@@ -1,0 +1,10 @@
+# rustc defaults to -Zplt=no on x86_64-linux, which turns every call to the in-binary
+# `extern "C"` asm (notably the hot dav1d_msac_decode_* entropy functions) into a GOT
+# load + indirect call, and LLD does not relax these back to direct calls. Forcing
+# PLT-style call emission lets the linker resolve them to direct near calls, matching
+# how the C build calls the same asm. ~1.3% faster single-threaded decode.
+#
+# NOTE: -Z flags are nightly-only. The in-tree toolchain is pinned to nightly
+# (rust-toolchain.toml), but this breaks `cargo +stable build` from this directory.
+[target.'cfg(all(target_arch = "x86_64", target_os = "linux"))']
+rustflags = ["-Zplt=yes"]
