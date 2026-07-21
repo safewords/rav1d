@@ -180,6 +180,17 @@ fn mask_edges_inter(
 ) {
     let t_dim = &DAV1D_TXFM_DIMENSIONS[max_tx as usize];
 
+    // `by4`/`bx4` are a block's offset within its 128x128 (32x32 in 4px units)
+    // superblock, and `h4`/`w4` are the block's dimensions in the same units;
+    // AV1's partitioning never lets a block cross a superblock boundary, so
+    // these hold structurally (same invariant the C code relies on for its
+    // fixed `[32]`-sized `masks`/`txa` arrays with no runtime checking at
+    // all). Asserting them up front lets LLVM prove `by4 + y < 32` and
+    // `bx4 + x < 32` for every access below where `y < h4` / `x < w4`,
+    // eliminating the per-access bounds checks that a lack of this range
+    // info otherwise forces onto every element access on `masks`/`txa`.
+    assert!(h4 <= 32 && w4 <= 32 && by4 + h4 <= 32 && bx4 + w4 <= 32);
+
     // See [`decomp_tx`]'s docs for the `txa` arg.
 
     let mut txa = Align16([[[[MaybeUninit::uninit(); 32]; 32]; 2]; 2]);
