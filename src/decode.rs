@@ -1880,34 +1880,53 @@ fn decode_b(
             y_mode
         };
         let is_inter_or_switch = f.frame_hdr().frame_type.is_inter_or_switch();
-        CaseSet::<32, false>::many(
-            [(&t.l, t_dim.lh, 1), (ta, t_dim.lw, 0)],
-            [bh4 as usize, bw4 as usize],
-            [by4 as usize, bx4 as usize],
-            |case, (dir, lw_lh, dir_index)| {
-                case.set_disjoint(&dir.tx_intra, lw_lh as i8);
-                // TODO check unwrap is optimized out
-                case.set_disjoint(&dir.tx, TxfmSize::from_repr(lw_lh as _).unwrap());
-                case.set_disjoint(&dir.mode, y_mode_nofilt);
-                case.set_disjoint(&dir.pal_sz, pal_sz[0]);
-                case.set_disjoint(&dir.seg_pred, seg_pred.into());
-                case.set_disjoint(&dir.skip_mode, 0);
-                case.set_disjoint(&dir.intra, 1);
-                case.set_disjoint(&dir.skip, b.skip);
-                // see aomedia bug 2183 for why we use luma coordinates here
-                case.set(
-                    &mut t.pal_sz_uv[dir_index],
-                    if has_chroma { pal_sz[1] } else { 0 },
-                );
-                if is_inter_or_switch {
-                    case.set_disjoint(&dir.comp_type, None);
-                    case.set_disjoint(&dir.r#ref[0], -1);
-                    case.set_disjoint(&dir.r#ref[1], -1);
-                    case.set_disjoint(&dir.filter[0], Rav1dFilterMode::N_SWITCHABLE_FILTERS);
-                    case.set_disjoint(&dir.filter[1], Rav1dFilterMode::N_SWITCHABLE_FILTERS);
-                }
-            },
-        );
+        // Unrolled from a `CaseSet::many` over `[(&t.l, t_dim.lh, 1), (ta,
+        // t_dim.lw, 0)]` into 2 direct `CaseSet::one` calls (mirroring the C
+        // code's 2 independent `case_set` macro expansions inside its
+        // `for (i = 0; i < 2; ...)` loop body, rather than a shared generic
+        // loop over an array of `(dir, lw_lh, dir_index)` tuples) to avoid
+        // the tuple-destructuring closure and array/zip iteration overhead on
+        // this hot intra-block context-update path.
+        CaseSet::<32, false>::one((), bh4 as usize, by4 as usize, |case, ()| {
+            case.set_disjoint(&t.l.tx_intra, t_dim.lh as i8);
+            // TODO check unwrap is optimized out
+            case.set_disjoint(&t.l.tx, TxfmSize::from_repr(t_dim.lh as _).unwrap());
+            case.set_disjoint(&t.l.mode, y_mode_nofilt);
+            case.set_disjoint(&t.l.pal_sz, pal_sz[0]);
+            case.set_disjoint(&t.l.seg_pred, seg_pred.into());
+            case.set_disjoint(&t.l.skip_mode, 0);
+            case.set_disjoint(&t.l.intra, 1);
+            case.set_disjoint(&t.l.skip, b.skip);
+            // see aomedia bug 2183 for why we use luma coordinates here
+            case.set(&mut t.pal_sz_uv[1], if has_chroma { pal_sz[1] } else { 0 });
+            if is_inter_or_switch {
+                case.set_disjoint(&t.l.comp_type, None);
+                case.set_disjoint(&t.l.r#ref[0], -1);
+                case.set_disjoint(&t.l.r#ref[1], -1);
+                case.set_disjoint(&t.l.filter[0], Rav1dFilterMode::N_SWITCHABLE_FILTERS);
+                case.set_disjoint(&t.l.filter[1], Rav1dFilterMode::N_SWITCHABLE_FILTERS);
+            }
+        });
+        CaseSet::<32, false>::one((), bw4 as usize, bx4 as usize, |case, ()| {
+            case.set_disjoint(&ta.tx_intra, t_dim.lw as i8);
+            // TODO check unwrap is optimized out
+            case.set_disjoint(&ta.tx, TxfmSize::from_repr(t_dim.lw as _).unwrap());
+            case.set_disjoint(&ta.mode, y_mode_nofilt);
+            case.set_disjoint(&ta.pal_sz, pal_sz[0]);
+            case.set_disjoint(&ta.seg_pred, seg_pred.into());
+            case.set_disjoint(&ta.skip_mode, 0);
+            case.set_disjoint(&ta.intra, 1);
+            case.set_disjoint(&ta.skip, b.skip);
+            // see aomedia bug 2183 for why we use luma coordinates here
+            case.set(&mut t.pal_sz_uv[0], if has_chroma { pal_sz[1] } else { 0 });
+            if is_inter_or_switch {
+                case.set_disjoint(&ta.comp_type, None);
+                case.set_disjoint(&ta.r#ref[0], -1);
+                case.set_disjoint(&ta.r#ref[1], -1);
+                case.set_disjoint(&ta.filter[0], Rav1dFilterMode::N_SWITCHABLE_FILTERS);
+                case.set_disjoint(&ta.filter[1], Rav1dFilterMode::N_SWITCHABLE_FILTERS);
+            }
+        });
         if pal_sz[0] != 0 {
             (bd_fn.copy_pal_block_y)(t, f, bx4 as usize, by4 as usize, bw4 as usize, bh4 as usize);
         }
@@ -3031,27 +3050,94 @@ fn decode_b(
             splat_oneref_mv(c, t, &f.rf, bs, &inter, bw4 as usize, bh4 as usize);
         }
 
-        CaseSet::<32, false>::many(
-            [(&t.l, 1), (ta, 0)],
-            [bh4 as usize, bw4 as usize],
-            [by4 as usize, bx4 as usize],
-            |case, (dir, dir_index)| {
-                case.set_disjoint(&dir.seg_pred, seg_pred.into());
-                case.set_disjoint(&dir.skip_mode, b.skip_mode);
-                case.set_disjoint(&dir.intra, 0);
-                case.set_disjoint(&dir.skip, b.skip);
-                case.set_disjoint(&dir.pal_sz, 0);
+        // Site-local expansion of the `CaseSet::many` this replaces: select the
+        // per-direction width ONCE (matching C's single `case_set` switch per
+        // direction), then perform all 13 field writes as fixed-width stores
+        // within that selected arm, instead of 13 independently-dispatched
+        // `small_memset` calls per direction. Preserves `CaseSet::<32, false>`
+        // semantics exactly, including the non-power-of-2 no-op fallback.
+        macro_rules! set_normal_inter_ctx {
+            ($n:literal, $dir:expr, $off:expr, $dir_index:expr) => {{
+                let off = $off;
+                {
+                    let mut buf = ($dir).seg_pred.index_mut(off..off + $n);
+                    *<&mut [u8; $n]>::try_from(&mut *buf).unwrap() = [seg_pred.into(); $n];
+                }
+                {
+                    let mut buf = ($dir).skip_mode.index_mut(off..off + $n);
+                    *<&mut [u8; $n]>::try_from(&mut *buf).unwrap() = [b.skip_mode; $n];
+                }
+                {
+                    let mut buf = ($dir).intra.index_mut(off..off + $n);
+                    *<&mut [u8; $n]>::try_from(&mut *buf).unwrap() = [0u8; $n];
+                }
+                {
+                    let mut buf = ($dir).skip.index_mut(off..off + $n);
+                    *<&mut [u8; $n]>::try_from(&mut *buf).unwrap() = [b.skip; $n];
+                }
+                {
+                    let mut buf = ($dir).pal_sz.index_mut(off..off + $n);
+                    *<&mut [u8; $n]>::try_from(&mut *buf).unwrap() = [0u8; $n];
+                }
                 // see aomedia bug 2183 for why this is outside if (has_chroma)
-                case.set(&mut t.pal_sz_uv[dir_index], 0);
-                case.set_disjoint(&dir.tx_intra, b_dim[2 + dir_index] as i8);
-                case.set_disjoint(&dir.comp_type, comp_type);
-                case.set_disjoint(&dir.filter[0], filter[0]);
-                case.set_disjoint(&dir.filter[1], filter[1]);
-                case.set_disjoint(&dir.mode, inter_mode);
-                case.set_disjoint(&dir.r#ref[0], r#ref[0]);
-                case.set_disjoint(&dir.r#ref[1], r#ref[1]);
-            },
-        );
+                {
+                    let row: &mut [u8; $n] = (&mut t.pal_sz_uv[$dir_index][off..off + $n])
+                        .try_into()
+                        .unwrap();
+                    *row = [0u8; $n];
+                }
+                {
+                    let mut buf = ($dir).tx_intra.index_mut(off..off + $n);
+                    *<&mut [i8; $n]>::try_from(&mut *buf).unwrap() =
+                        [b_dim[2 + $dir_index] as i8; $n];
+                }
+                {
+                    let mut buf = ($dir).comp_type.index_mut(off..off + $n);
+                    *<&mut [Option<CompInterType>; $n]>::try_from(&mut *buf).unwrap() =
+                        [comp_type; $n];
+                }
+                {
+                    let mut buf = ($dir).filter[0].index_mut(off..off + $n);
+                    *<&mut [Rav1dFilterMode; $n]>::try_from(&mut *buf).unwrap() = [filter[0]; $n];
+                }
+                {
+                    let mut buf = ($dir).filter[1].index_mut(off..off + $n);
+                    *<&mut [Rav1dFilterMode; $n]>::try_from(&mut *buf).unwrap() = [filter[1]; $n];
+                }
+                {
+                    let mut buf = ($dir).mode.index_mut(off..off + $n);
+                    *<&mut [u8; $n]>::try_from(&mut *buf).unwrap() = [inter_mode; $n];
+                }
+                {
+                    let mut buf = ($dir).r#ref[0].index_mut(off..off + $n);
+                    *<&mut [i8; $n]>::try_from(&mut *buf).unwrap() = [r#ref[0]; $n];
+                }
+                {
+                    let mut buf = ($dir).r#ref[1].index_mut(off..off + $n);
+                    *<&mut [i8; $n]>::try_from(&mut *buf).unwrap() = [r#ref[1]; $n];
+                }
+            }};
+        }
+        match bh4 as usize {
+            1 => set_normal_inter_ctx!(1, t.l, by4 as usize, 1),
+            2 => set_normal_inter_ctx!(2, t.l, by4 as usize, 1),
+            4 => set_normal_inter_ctx!(4, t.l, by4 as usize, 1),
+            8 => set_normal_inter_ctx!(8, t.l, by4 as usize, 1),
+            16 => set_normal_inter_ctx!(16, t.l, by4 as usize, 1),
+            32 => set_normal_inter_ctx!(32, t.l, by4 as usize, 1),
+            // Matches `CaseSet::<32, false>`'s prior behavior: non-power-of-2
+            // widths are silently skipped (`WITH_DEFAULT = false`).
+            _ => {}
+        }
+        match bw4 as usize {
+            1 => set_normal_inter_ctx!(1, ta, bx4 as usize, 0),
+            2 => set_normal_inter_ctx!(2, ta, bx4 as usize, 0),
+            4 => set_normal_inter_ctx!(4, ta, bx4 as usize, 0),
+            8 => set_normal_inter_ctx!(8, ta, bx4 as usize, 0),
+            16 => set_normal_inter_ctx!(16, ta, bx4 as usize, 0),
+            32 => set_normal_inter_ctx!(32, ta, bx4 as usize, 0),
+            _ => {}
+        }
 
         if has_chroma {
             CaseSet::<32, false>::many(
