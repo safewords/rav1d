@@ -1452,15 +1452,23 @@ fn read_coef_tree<BD: BitDepth>(
                     ytx, txtp, eob, ts_c.msac.rng,
                 );
             }
-            CaseSet::<16, true>::many(
-                [&t.l.lcoef, &f.a[t.a].lcoef],
-                [
-                    cmp::min(txh as c_int, f.bh - t.b.y) as usize,
-                    cmp::min(txw as c_int, f.bw - t.b.x) as usize,
-                ],
-                [by4, bx4],
-                |case, dir| {
-                    case.set_disjoint(dir, cf_ctx);
+            // Unrolled from a `CaseSet::many` over `[(&t.l.lcoef, l_len), (&f.a[t.a].lcoef,
+            // a_len)]` into 2 direct `CaseSet::one` calls (the `bfae5f1d` `read_tx_tree`
+            // pattern), removing the tuple/zip/closure loop.
+            CaseSet::<16, true>::one(
+                (),
+                cmp::min(txh as c_int, f.bh - t.b.y) as usize,
+                by4,
+                |case, ()| {
+                    case.set_disjoint(&t.l.lcoef, cf_ctx);
+                },
+            );
+            CaseSet::<16, true>::one(
+                (),
+                cmp::min(txw as c_int, f.bw - t.b.x) as usize,
+                bx4,
+                |case, ()| {
+                    case.set_disjoint(&f.a[t.a].lcoef, cf_ctx);
                 },
             );
             let txtp_map =
@@ -2380,15 +2388,23 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                     ts_c.as_deref().unwrap().msac.rng,
                                 );
                             }
-                            CaseSet::<16, true>::many(
-                                [&t.l, &f.a[t.a]],
-                                [
-                                    cmp::min(t_dim.h as i32, f.bh - t.b.y) as usize,
-                                    cmp::min(t_dim.w as i32, f.bw - t.b.x) as usize,
-                                ],
-                                [(by4 + y) as usize, (bx4 + x) as usize],
-                                |case, dir| {
-                                    case.set_disjoint(&dir.lcoef, cf_ctx);
+                            // Unrolled from a `CaseSet::many` over `[(&t.l, l_len), (&f.a[t.a],
+                            // a_len)]` into 2 direct `CaseSet::one` calls (the `bfae5f1d`
+                            // `read_tx_tree` pattern).
+                            CaseSet::<16, true>::one(
+                                (),
+                                cmp::min(t_dim.h as i32, f.bh - t.b.y) as usize,
+                                (by4 + y) as usize,
+                                |case, ()| {
+                                    case.set_disjoint(&t.l.lcoef, cf_ctx);
+                                },
+                            );
+                            CaseSet::<16, true>::one(
+                                (),
+                                cmp::min(t_dim.w as i32, f.bw - t.b.x) as usize,
+                                (bx4 + x) as usize,
+                                |case, ()| {
+                                    case.set_disjoint(&f.a[t.a].lcoef, cf_ctx);
                                 },
                             );
                         }
@@ -2414,12 +2430,20 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                             }
                         }
                     } else if t.frame_thread.pass == 0 {
-                        CaseSet::<16, false>::many(
-                            [&t.l, &f.a[t.a]],
-                            [t_dim.h as usize, t_dim.w as usize],
-                            [(by4 + y) as usize, (bx4 + x) as usize],
-                            |case, dir| {
-                                case.set_disjoint(&dir.lcoef, 0x40);
+                        CaseSet::<16, false>::one(
+                            (),
+                            t_dim.h as usize,
+                            (by4 + y) as usize,
+                            |case, ()| {
+                                case.set_disjoint(&t.l.lcoef, 0x40);
+                            },
+                        );
+                        CaseSet::<16, false>::one(
+                            (),
+                            t_dim.w as usize,
+                            (bx4 + x) as usize,
+                            |case, ()| {
+                                case.set_disjoint(&f.a[t.a].lcoef, 0x40);
                             },
                         );
                     }
@@ -2755,17 +2779,25 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                             cbx4,
                                         );
                                 }
-                                CaseSet::<16, true>::many(
-                                    [l_ccoef, a_ccoef],
-                                    [
-                                        cmp::min(uv_t_dim.h as i32, f.bh - t.b.y + ss_ver >> ss_ver)
-                                            as usize,
-                                        cmp::min(uv_t_dim.w as i32, f.bw - t.b.x + ss_hor >> ss_hor)
-                                            as usize,
-                                    ],
-                                    [(cby4 + y) as usize, (cbx4 + x) as usize],
-                                    |case, dir| {
-                                        case.set_disjoint(dir, cf_ctx);
+                                // Unrolled from a `CaseSet::many` over `[(l_ccoef, l_len),
+                                // (a_ccoef, a_len)]` into 2 direct `CaseSet::one` calls (the
+                                // `bfae5f1d` `read_tx_tree` pattern).
+                                CaseSet::<16, true>::one(
+                                    (),
+                                    cmp::min(uv_t_dim.h as i32, f.bh - t.b.y + ss_ver >> ss_ver)
+                                        as usize,
+                                    (cby4 + y) as usize,
+                                    |case, ()| {
+                                        case.set_disjoint(l_ccoef, cf_ctx);
+                                    },
+                                );
+                                CaseSet::<16, true>::one(
+                                    (),
+                                    cmp::min(uv_t_dim.w as i32, f.bw - t.b.x + ss_hor >> ss_hor)
+                                        as usize,
+                                    (cbx4 + x) as usize,
+                                    |case, ()| {
+                                        case.set_disjoint(a_ccoef, cf_ctx);
                                     },
                                 );
                             }
@@ -2791,12 +2823,20 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                 }
                             }
                         } else if t.frame_thread.pass == 0 {
-                            CaseSet::<16, false>::many(
-                                [&t.l, &f.a[t.a]],
-                                [uv_t_dim.h as usize, uv_t_dim.w as usize],
-                                [(cby4 + y) as usize, (cbx4 + x) as usize],
-                                |case, dir| {
-                                    case.set_disjoint(&dir.ccoef[pl], 0x40);
+                            CaseSet::<16, false>::one(
+                                (),
+                                uv_t_dim.h as usize,
+                                (cby4 + y) as usize,
+                                |case, ()| {
+                                    case.set_disjoint(&t.l.ccoef[pl], 0x40);
+                                },
+                            );
+                            CaseSet::<16, false>::one(
+                                (),
+                                uv_t_dim.w as usize,
+                                (cbx4 + x) as usize,
+                                |case, ()| {
+                                    case.set_disjoint(&f.a[t.a].ccoef[pl], 0x40);
                                 },
                             );
                         }
