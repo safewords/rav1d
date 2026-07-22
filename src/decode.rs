@@ -2971,7 +2971,7 @@ fn decode_b(
         } = read_vartx_tree(t, f, ts_c, b, bs, bx4, by4);
 
         b.uvtx = uvtx;
-        let inter = Av1BlockInter {
+        b.ii = Av1BlockIntraInter::Inter(Av1BlockInter {
             nd,
             comp_type,
             inter_mode,
@@ -2983,14 +2983,17 @@ fn decode_b(
             interintra_type,
             tx_split0,
             tx_split1,
+        });
+
+        let Av1BlockIntraInter::Inter(inter) = &b.ii else {
+            unreachable!()
         };
-        b.ii = Av1BlockIntraInter::Inter(inter.clone());
 
         // reconstruction
         if t.frame_thread.pass == 1 {
             (bd_fn.read_coef_blocks)(f, t, ts_c, bs, b);
         } else {
-            (bd_fn.recon_b_inter)(f, t, Some(ts_c), bs, b, &inter)?;
+            (bd_fn.recon_b_inter)(f, t, Some(ts_c), bs, b, inter)?;
         }
 
         let frame_hdr = f.frame_hdr();
@@ -3045,9 +3048,9 @@ fn decode_b(
 
         // context updates
         if is_comp {
-            splat_tworef_mv(c, t, &f.rf, bs, &inter, bw4 as usize, bh4 as usize);
+            splat_tworef_mv(c, t, &f.rf, bs, inter, bw4 as usize, bh4 as usize);
         } else {
-            splat_oneref_mv(c, t, &f.rf, bs, &inter, bw4 as usize, bh4 as usize);
+            splat_oneref_mv(c, t, &f.rf, bs, inter, bw4 as usize, bh4 as usize);
         }
 
         // Site-local expansion of the `CaseSet::many` this replaces: select the
