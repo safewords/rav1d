@@ -34,6 +34,36 @@
 /// This ensures that the `fn` signature is consistent between all of these
 /// and reduces the need to repeat the `fn` signature many times.
 ///
+/// # Asm signatures that diverge from the slot signature
+///
+/// Asm kernels often take fewer arguments than the Rust fallback occupying the same slot,
+/// because the fallback needs extra metadata to reconstruct checked Rust values.
+/// The default way to model that in this crate is a **private nested `mod` with its own
+/// [`wrap_fn_ptr!`] for the exact asm signature, plus a `*_erased` Rust shim stored in the
+/// slot**, e.g. `mod neon` in `src/cdef.rs` (driven by `cdef_filter_neon_erased`) and
+/// `src/looprestoration.rs` (driven by `wiener_filter_neon_erased`); `src/ipred.rs` and
+/// `src/filmgrain.rs` do the same. New cases go here by default.
+///
+/// `src/loopfilter.rs` is a deliberate, local exception: it stores the exact 8-bit and
+/// high-bitdepth asm signatures in an 8-byte union next to the Rust fallback and selects
+/// the arm from a per-context tag, with no shim. The shim's own call would consume the win
+/// there, because the loop filter is called unconditionally per 4-pixel edge
+/// (~128 calls per superblock, see `src/lf_apply.rs`) into a callee that usually early-outs
+/// on a zero mask, while the fallback-only by-value arguments cost 5 (8bpc) / 4 (hbd)
+/// outgoing stack eightbytes per call. Removing them measured -0.5% cycles against a
+/// function-address-matched control versus -0.13% instructions, i.e. a store-buffer stall
+/// effect that argument counting and instruction counts do not predict.
+///
+/// Do not copy that pattern without meeting all of:
+///
+/// * every slot of the context is raw asm at every reachable CPU tier and bit depth, so a
+///   single per-context tag is representable — per-slot tagging means a 16-byte slot,
+///   which measured +0.095% cycles and was rejected;
+/// * the `call` method already receives the context or frame, so reading the tag is free;
+/// * an address-matched cycles A/B confirms a real win — the same change measured
+///   cycle-neutral at `src/mc.rs` and at cdef;
+/// * the x86, arm, no-asm, `--cpumask 0`, and 8/10/12-bit paths are all reviewed.
+///
 /// [`BitDepth`]: crate::include::common::bitdepth::BitDepth
 /// [`DefaultValue`]: crate::enum_map::DefaultValue
 /// [`enum_map!`]: crate::enum_map::enum_map

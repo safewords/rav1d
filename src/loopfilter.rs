@@ -12,9 +12,14 @@ use crate::disjoint_mut::DisjointMut;
 use crate::ffi_safe::FFISafe;
 #[cfg(all(
     feature = "asm",
-    not(any(target_arch = "riscv64", target_arch = "riscv32"))
+    any(
+        target_arch = "x86",
+        target_arch = "x86_64",
+        target_arch = "arm",
+        target_arch = "aarch64"
+    )
 ))]
-use crate::include::common::bitdepth::bd_fn;
+use crate::include::common::bitdepth::BPC;
 use crate::include::common::bitdepth::{AsPrimitive, BitDepth, DynPixel};
 use crate::include::common::intops::iclip;
 use crate::include::dav1d::picture::{
@@ -26,7 +31,7 @@ use crate::strided::Strided as _;
 use crate::with_offset::WithOffset;
 use crate::wrap_fn_ptr::wrap_fn_ptr;
 
-wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
+wrap_fn_ptr!(unsafe extern "C" fn loopfilter_sb(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     mask: &[u32; 3],
@@ -39,8 +44,168 @@ wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
     _lvl: WithOffset<*const FFISafe<DisjointMut<AlignedVec2<u8>>>>,
 ) -> ());
 
-impl loopfilter_sb::Fn {
-    pub fn call<BD: BitDepth>(
+// The exact 8-bit assembly ABI: `decl_loopfilter_sb_fn` (`src/loopfilter.h`) with an empty
+// `HIGHBD_DECL_SUFFIX`. Only `LoopFilterSbFn` may name it.
+#[cfg(all(
+    feature = "asm",
+    any(
+        target_arch = "x86",
+        target_arch = "x86_64",
+        target_arch = "arm",
+        target_arch = "aarch64"
+    )
+))]
+wrap_fn_ptr!(unsafe extern "C" fn loopfilter_sb_asm8(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    mask: &[u32; 3],
+    lvl_ptr: *const [u8; 4],
+    b4_stride: ptrdiff_t,
+    lut: &Align16<Av1FilterLUT>,
+    w: c_int,
+) -> ());
+
+// The same with `HIGHBD_DECL_SUFFIX` expanded to `, const int bitdepth_max`.
+#[cfg(all(
+    feature = "asm",
+    any(
+        target_arch = "x86",
+        target_arch = "x86_64",
+        target_arch = "arm",
+        target_arch = "aarch64"
+    )
+))]
+wrap_fn_ptr!(unsafe extern "C" fn loopfilter_sb_asm16(
+    dst_ptr: *mut DynPixel,
+    stride: ptrdiff_t,
+    mask: &[u32; 3],
+    lvl_ptr: *const [u8; 4],
+    b4_stride: ptrdiff_t,
+    lut: &Align16<Av1FilterLUT>,
+    w: c_int,
+    bitdepth_max: c_int,
+) -> ());
+
+/// One loop-filter function slot.
+///
+/// The live arm is not encoded per slot; it is given by the `LoopFilterKind` that
+/// [`Rav1dLoopFilterDSPContext::new`] returned together with the slots.
+/// Every arm must stay pointer-sized so that a slot is exactly 8 bytes:
+/// a fully tagged 16-byte slot measured +0.095% cycles and was rejected.
+#[derive(Clone, Copy)]
+pub(crate) union LoopFilterSbFn {
+    rust: loopfilter_sb::Fn,
+    #[cfg(all(
+        feature = "asm",
+        any(
+            target_arch = "x86",
+            target_arch = "x86_64",
+            target_arch = "arm",
+            target_arch = "aarch64"
+        )
+    ))]
+    asm8: loopfilter_sb_asm8::Fn,
+    #[cfg(all(
+        feature = "asm",
+        any(
+            target_arch = "x86",
+            target_arch = "x86_64",
+            target_arch = "arm",
+            target_arch = "aarch64"
+        )
+    ))]
+    asm16: loopfilter_sb_asm16::Fn,
+}
+
+/// Which [`LoopFilterSbFn`] arm every slot of a [`Rav1dLoopFilterDSPContext`] holds.
+///
+/// This is the tag of an untagged union that is read on the dispatch path, so it is a
+/// soundness invariant that it describes the slots it was returned with:
+/// * `Kind::Rust`: all four slots hold their `rust` arm.
+/// * `Kind::Asm`: all four slots hold the `asm8` or `asm16` arm matching the bit depth
+///   the slots were constructed for.
+///
+/// The invariant is structural, not conventional: [`Rav1dLoopFilterDSPContext::new`] is
+/// the only way to obtain either half, and it derives both from the same branch.
+/// `Kind` and the `RUST`/`ASM` constants are private to this module, so no other module
+/// can construct a tag, and the slots are only reachable through `&`-accessors, so no
+/// other module can alter them.
+#[derive(Clone, Copy)]
+pub(crate) struct LoopFilterKind(Kind);
+
+#[derive(Clone, Copy)]
+enum Kind {
+    Rust,
+    #[cfg(all(
+        feature = "asm",
+        any(
+            target_arch = "x86",
+            target_arch = "x86_64",
+            target_arch = "arm",
+            target_arch = "aarch64"
+        )
+    ))]
+    Asm,
+}
+
+impl LoopFilterKind {
+    const RUST: Self = Self(Kind::Rust);
+
+    #[cfg(all(
+        feature = "asm",
+        any(
+            target_arch = "x86",
+            target_arch = "x86_64",
+            target_arch = "arm",
+            target_arch = "aarch64"
+        )
+    ))]
+    const ASM: Self = Self(Kind::Asm);
+}
+
+#[cfg(all(
+    feature = "asm",
+    any(
+        target_arch = "x86",
+        target_arch = "x86_64",
+        target_arch = "arm",
+        target_arch = "aarch64"
+    )
+))]
+macro_rules! loopfilter_asm_fn {
+    ($BD:ty, $name:ident, $asm:ident) => {{
+        use paste::paste;
+
+        paste! {
+            match $BD::BPC {
+                BPC::BPC8 => LoopFilterSbFn {
+                    asm8: loopfilter_sb_asm8::decl_fn!(
+                        fn [<dav1d_ $name _8bpc_ $asm>]
+                    ),
+                },
+                BPC::BPC16 => LoopFilterSbFn {
+                    asm16: loopfilter_sb_asm16::decl_fn!(
+                        fn [<dav1d_ $name _16bpc_ $asm>]
+                    ),
+                },
+            }
+        }
+    }};
+}
+
+impl LoopFilterSbFn {
+    /// The union arm read here is selected by `f.dsp`'s [`LoopFilterKind`] and, for the
+    /// assembly arms, by the call-site `BD::BPC`, while the slots were written at
+    /// construction time. Two invariants make that sound, and both hold for every caller:
+    ///
+    /// * `self` is one of `f.dsp`'s own four slots, so the tag describes it
+    ///   (`debug_assert`ed below).
+    /// * `BD` agrees with the bit depth `f.dsp` was constructed for. The context is
+    ///   selected from `seq_hdr.hbd` (`src/decode.rs`, via
+    ///   `Rav1dBitDepthDSPContext::get`), while `BD` is derived from `f.cur.p.bpc`
+    ///   through `f.bitdepth_max` (`src/decode.rs`, via `Rav1dFrameData::bd_fn`);
+    ///   both reduce to the same 8-bit vs. high-bitdepth split.
+    pub(crate) fn call<BD: BitDepth>(
         &self,
         f: &Rav1dFrameData,
         dst: Rav1dPictureDataComponentOffset,
@@ -48,6 +213,10 @@ impl loopfilter_sb::Fn {
         lvl: WithOffset<&DisjointMut<AlignedVec2<u8>>>,
         w: usize,
     ) {
+        // Debug builds only; the release vector suites do not execute this.
+        #[cfg(debug_assertions)]
+        assert!(f.dsp.lf().contains(self));
+
         let dst_ptr = dst.as_mut_ptr::<BD>().cast();
         let stride = dst.stride();
         assert!(lvl.offset <= lvl.data.len());
@@ -58,33 +227,75 @@ impl loopfilter_sb::Fn {
         let lut = &f.lf.lim_lut;
         let w = w as c_int;
         let bd = f.bitdepth_max;
-        let dst = dst.into_ffi_safe();
-        let lvl = lvl.into_ffi_safe();
-        // SAFETY: Fallback `fn loop_filter_sb128_rust` is safe; asm is supposed to do the same.
-        unsafe {
-            self.get()(
-                dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst, lvl,
-            )
+        match f.dsp.lf_kind().0 {
+            Kind::Rust => {
+                // SAFETY: `LoopFilterKind`'s invariant makes `rust` the active arm.
+                let fallback = unsafe { self.rust };
+                let dst = dst.into_ffi_safe();
+                let lvl = lvl.into_ffi_safe();
+                // SAFETY: The fallback reconstructs the checked Rust values passed here.
+                unsafe {
+                    fallback.get()(
+                        dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd, dst, lvl,
+                    )
+                }
+            }
+            #[cfg(all(
+                feature = "asm",
+                any(
+                    target_arch = "x86",
+                    target_arch = "x86_64",
+                    target_arch = "arm",
+                    target_arch = "aarch64"
+                )
+            ))]
+            Kind::Asm => match BD::BPC {
+                BPC::BPC8 => {
+                    // SAFETY: `LoopFilterKind`'s invariant makes `asm8` the active arm.
+                    let asm = unsafe { self.asm8 };
+                    // SAFETY: This is an 8-bit assembly implementation.
+                    unsafe { asm.get()(dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w) }
+                }
+                BPC::BPC16 => {
+                    // SAFETY: `LoopFilterKind`'s invariant makes `asm16` the active arm.
+                    let asm = unsafe { self.asm16 };
+                    // SAFETY: This is a high-bitdepth assembly implementation.
+                    unsafe { asm.get()(dst_ptr, stride, mask, lvl_ptr, b4_stride, lut, w, bd) }
+                }
+            },
         }
     }
 
     const fn default<BD: BitDepth, const HV: usize, const YUV: usize>() -> Self {
-        Self::new(loop_filter_sb128_c_erased::<BD, { HV }, { YUV }>)
+        Self {
+            rust: loopfilter_sb::Fn::new(loop_filter_sb128_c_erased::<BD, { HV }, { YUV }>),
+        }
+    }
+
+    /// The stored pointer as a bare address, for debug checks only.
+    #[cfg(debug_assertions)]
+    fn addr(&self) -> usize {
+        // SAFETY: Every arm is a non-null `extern "C"` `fn` ptr of the same size,
+        // and the result is only compared as an address, never called through.
+        let fn_ptr = unsafe { self.rust };
+        *fn_ptr.get() as usize
     }
 }
 
-pub struct LoopFilterHVDSPContext {
-    pub h: loopfilter_sb::Fn,
-    pub v: loopfilter_sb::Fn,
+pub(crate) struct LoopFilterHVDSPContext {
+    pub h: LoopFilterSbFn,
+    pub v: LoopFilterSbFn,
 }
 
-pub struct LoopFilterYUVDSPContext {
+pub(crate) struct LoopFilterYUVDSPContext {
     pub y: LoopFilterHVDSPContext,
     pub uv: LoopFilterHVDSPContext,
 }
 
-pub struct Rav1dLoopFilterDSPContext {
-    pub loop_filter_sb: LoopFilterYUVDSPContext,
+pub(crate) struct Rav1dLoopFilterDSPContext {
+    /// Private: the slots are only handed out behind a `&`, so that no other module can
+    /// alter them out from under the [`LoopFilterKind`] tag they were constructed with.
+    loop_filter_sb: LoopFilterYUVDSPContext,
 }
 
 #[inline(never)]
@@ -357,7 +568,7 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
 
 /// # Safety
 ///
-/// Must be called by [`loopfilter_sb::Fn::call`].
+/// Must be called by [`LoopFilterSbFn::call`].
 #[deny(unsafe_op_in_unsafe_fn)]
 unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, const YUV: usize>(
     _dst_ptr: *mut DynPixel,
@@ -371,9 +582,9 @@ unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, c
     dst: FFISafeRav1dPictureDataComponentOffset,
     lvl: WithOffset<*const FFISafe<DisjointMut<AlignedVec2<u8>>>>,
 ) {
-    // SAFETY: Was passed as `WithOffset::into_ffi_safe(_)` in `loopfilter_sb::Fn::call`.
+    // SAFETY: Was passed as `WithOffset::into_ffi_safe(_)` in `LoopFilterSbFn::call`.
     let dst = unsafe { FFISafe::from_with_offset(dst) };
-    // SAFETY: Was passed as `WithOffset::into_ffi_safe(_)` in `loopfilter_sb::Fn::call`.
+    // SAFETY: Was passed as `WithOffset::into_ffi_safe(_)` in `LoopFilterSbFn::call`.
     let lvl = unsafe { FFISafe::from_with_offset(lvl) };
     let b4_stride = b4_stride as usize;
     let bd = BD::from_c(bitdepth_max);
@@ -381,80 +592,131 @@ unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, c
 }
 
 impl Rav1dLoopFilterDSPContext {
-    pub const fn default<BD: BitDepth>() -> Self {
+    #[inline(always)]
+    pub(crate) fn loop_filter_sb(&self) -> &LoopFilterYUVDSPContext {
+        &self.loop_filter_sb
+    }
+
+    /// Whether `slot` is one of this context's four slots, i.e. whether this context's
+    /// [`LoopFilterKind`] describes it. Debug checks only.
+    #[cfg(debug_assertions)]
+    fn contains(&self, slot: &LoopFilterSbFn) -> bool {
+        let sb = &self.loop_filter_sb;
+        [&sb.y.h, &sb.y.v, &sb.uv.h, &sb.uv.v]
+            .into_iter()
+            .any(|s| std::ptr::eq(s, slot))
+    }
+
+    /// Verifies that `kind` describes what [`Self::init`] actually wrote: an assembly tag
+    /// requires that all four fallback slots were overwritten, and a Rust tag requires
+    /// that none of them were. This is the failure mode a divergence between the tag and
+    /// the assembly thresholds would produce, and it would be UB on the dispatch path.
+    ///
+    /// This only runs under `debug_assertions`; release builds, including the release
+    /// vector suites, do not execute it.
+    #[cfg(debug_assertions)]
+    pub(crate) fn debug_assert_kind<BD: BitDepth>(&self, kind: LoopFilterKind) {
+        let default = Self::default::<BD>();
+        let sb = &self.loop_filter_sb;
+        let fb = &default.loop_filter_sb;
+        for (slot, fallback) in [
+            (&sb.y.h, &fb.y.h),
+            (&sb.y.v, &fb.y.v),
+            (&sb.uv.h, &fb.uv.h),
+            (&sb.uv.v, &fb.uv.v),
+        ] {
+            match kind.0 {
+                Kind::Rust => assert_eq!(slot.addr(), fallback.addr()),
+                #[cfg(all(
+                    feature = "asm",
+                    any(
+                        target_arch = "x86",
+                        target_arch = "x86_64",
+                        target_arch = "arm",
+                        target_arch = "aarch64"
+                    )
+                ))]
+                Kind::Asm => assert_ne!(slot.addr(), fallback.addr()),
+            }
+        }
+    }
+
+    const fn default<BD: BitDepth>() -> Self {
         use HV::*;
         use YUV::*;
         Self {
             loop_filter_sb: LoopFilterYUVDSPContext {
                 y: LoopFilterHVDSPContext {
-                    h: loopfilter_sb::Fn::default::<BD, { H as _ }, { Y as _ }>(),
-                    v: loopfilter_sb::Fn::default::<BD, { V as _ }, { Y as _ }>(),
+                    h: LoopFilterSbFn::default::<BD, { H as _ }, { Y as _ }>(),
+                    v: LoopFilterSbFn::default::<BD, { V as _ }, { Y as _ }>(),
                 },
                 uv: LoopFilterHVDSPContext {
-                    h: loopfilter_sb::Fn::default::<BD, { H as _ }, { UV as _ }>(),
-                    v: loopfilter_sb::Fn::default::<BD, { V as _ }, { UV as _ }>(),
+                    h: LoopFilterSbFn::default::<BD, { H as _ }, { UV as _ }>(),
+                    v: LoopFilterSbFn::default::<BD, { V as _ }, { UV as _ }>(),
                 },
             },
         }
     }
 
+    /// The `SSSE3` threshold is tested here only: the tag returned alongside the slots
+    /// comes from the same branch that assigns them, so the two cannot diverge.
     #[cfg(all(feature = "asm", any(target_arch = "x86", target_arch = "x86_64")))]
     #[inline(always)]
-    const fn init_x86<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
+    const fn init_x86<BD: BitDepth>(mut self, flags: CpuFlags) -> (Self, LoopFilterKind) {
         if !flags.contains(CpuFlags::SSSE3) {
-            return self;
+            return (self, LoopFilterKind::RUST);
         }
 
-        self.loop_filter_sb.y.h = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_h_sb_y, ssse3);
-        self.loop_filter_sb.y.v = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_v_sb_y, ssse3);
-        self.loop_filter_sb.uv.h = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_h_sb_uv, ssse3);
-        self.loop_filter_sb.uv.v = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_v_sb_uv, ssse3);
+        self.loop_filter_sb.y.h = loopfilter_asm_fn!(BD, lpf_h_sb_y, ssse3);
+        self.loop_filter_sb.y.v = loopfilter_asm_fn!(BD, lpf_v_sb_y, ssse3);
+        self.loop_filter_sb.uv.h = loopfilter_asm_fn!(BD, lpf_h_sb_uv, ssse3);
+        self.loop_filter_sb.uv.v = loopfilter_asm_fn!(BD, lpf_v_sb_uv, ssse3);
 
         #[cfg(target_arch = "x86_64")]
         {
             if !flags.contains(CpuFlags::AVX2) {
-                return self;
+                return (self, LoopFilterKind::ASM);
             }
 
-            self.loop_filter_sb.y.h = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_h_sb_y, avx2);
-            self.loop_filter_sb.y.v = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_v_sb_y, avx2);
-            self.loop_filter_sb.uv.h = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_h_sb_uv, avx2);
-            self.loop_filter_sb.uv.v = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_v_sb_uv, avx2);
+            self.loop_filter_sb.y.h = loopfilter_asm_fn!(BD, lpf_h_sb_y, avx2);
+            self.loop_filter_sb.y.v = loopfilter_asm_fn!(BD, lpf_v_sb_y, avx2);
+            self.loop_filter_sb.uv.h = loopfilter_asm_fn!(BD, lpf_h_sb_uv, avx2);
+            self.loop_filter_sb.uv.v = loopfilter_asm_fn!(BD, lpf_v_sb_uv, avx2);
 
             if !flags.contains(CpuFlags::AVX512ICL) {
-                return self;
+                return (self, LoopFilterKind::ASM);
             }
 
-            self.loop_filter_sb.y.v = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_v_sb_y, avx512icl);
-            self.loop_filter_sb.uv.v = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_v_sb_uv, avx512icl);
+            self.loop_filter_sb.y.v = loopfilter_asm_fn!(BD, lpf_v_sb_y, avx512icl);
+            self.loop_filter_sb.uv.v = loopfilter_asm_fn!(BD, lpf_v_sb_uv, avx512icl);
 
             if !flags.contains(CpuFlags::SLOW_GATHER) {
-                self.loop_filter_sb.y.h = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_h_sb_y, avx512icl);
-                self.loop_filter_sb.uv.h =
-                    bd_fn!(loopfilter_sb::decl_fn, BD, lpf_h_sb_uv, avx512icl);
+                self.loop_filter_sb.y.h = loopfilter_asm_fn!(BD, lpf_h_sb_y, avx512icl);
+                self.loop_filter_sb.uv.h = loopfilter_asm_fn!(BD, lpf_h_sb_uv, avx512icl);
             }
         }
 
-        self
+        (self, LoopFilterKind::ASM)
     }
 
+    /// The `NEON` threshold is tested here only; see [`Self::init_x86`].
     #[cfg(all(feature = "asm", any(target_arch = "arm", target_arch = "aarch64")))]
     #[inline(always)]
-    const fn init_arm<BD: BitDepth>(mut self, flags: CpuFlags) -> Self {
+    const fn init_arm<BD: BitDepth>(mut self, flags: CpuFlags) -> (Self, LoopFilterKind) {
         if !flags.contains(CpuFlags::NEON) {
-            return self;
+            return (self, LoopFilterKind::RUST);
         }
 
-        self.loop_filter_sb.y.h = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_h_sb_y, neon);
-        self.loop_filter_sb.y.v = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_v_sb_y, neon);
-        self.loop_filter_sb.uv.h = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_h_sb_uv, neon);
-        self.loop_filter_sb.uv.v = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_v_sb_uv, neon);
+        self.loop_filter_sb.y.h = loopfilter_asm_fn!(BD, lpf_h_sb_y, neon);
+        self.loop_filter_sb.y.v = loopfilter_asm_fn!(BD, lpf_v_sb_y, neon);
+        self.loop_filter_sb.uv.h = loopfilter_asm_fn!(BD, lpf_h_sb_uv, neon);
+        self.loop_filter_sb.uv.v = loopfilter_asm_fn!(BD, lpf_v_sb_uv, neon);
 
-        self
+        (self, LoopFilterKind::ASM)
     }
 
     #[inline(always)]
-    const fn init<BD: BitDepth>(self, flags: CpuFlags) -> Self {
+    const fn init<BD: BitDepth>(self, flags: CpuFlags) -> (Self, LoopFilterKind) {
         #[cfg(feature = "asm")]
         {
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -470,11 +732,17 @@ impl Rav1dLoopFilterDSPContext {
         #[allow(unreachable_code)] // Reachable on some #[cfg]s.
         {
             let _ = flags;
-            self
+            (self, LoopFilterKind::RUST)
         }
     }
 
-    pub const fn new<BD: BitDepth>(flags: CpuFlags) -> Self {
+    /// Constructs the function slots together with the [`LoopFilterKind`] that describes
+    /// them, both from the same branch of [`Self::init`].
+    ///
+    /// This is the only way to obtain either half: [`Self::default`] is private and
+    /// `LoopFilterKind` is not constructible outside this module, so a tag cannot be
+    /// paired with slots it does not describe without editing this file.
+    pub(crate) const fn new<BD: BitDepth>(flags: CpuFlags) -> (Self, LoopFilterKind) {
         Self::default::<BD>().init::<BD>(flags)
     }
 }

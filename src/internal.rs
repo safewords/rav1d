@@ -33,7 +33,7 @@ use crate::itx::Rav1dInvTxfmDSPContext;
 use crate::levels::{Av1Block, Filter2d, SegmentId, TxfmType, WHT_WHT};
 use crate::lf_mask::{Av1Filter, Av1FilterLUT, Av1Restoration, Av1RestorationUnit};
 use crate::log::Rav1dLogger;
-use crate::loopfilter::Rav1dLoopFilterDSPContext;
+use crate::loopfilter::{LoopFilterKind, Rav1dLoopFilterDSPContext};
 use crate::looprestoration::Rav1dLoopRestorationDSPContext;
 use crate::lr_apply::LrRestorePlanes;
 use crate::mc::Rav1dMCDSPContext;
@@ -96,34 +96,51 @@ pub(crate) struct Rav1dBitDepthDSPContext {
     pub ipred: Rav1dIntraPredDSPContext,
     pub mc: Rav1dMCDSPContext,
     pub itx: Rav1dInvTxfmDSPContext,
-    pub lf: Rav1dLoopFilterDSPContext,
+    /// Private, and only handed out by [`Self::lf`] together with [`Self::lf_kind`]:
+    /// the tag is the tag of an untagged union, so the two halves must not be
+    /// constructible or mutable independently.
+    lf: Rav1dLoopFilterDSPContext,
     pub cdef: Rav1dCdefDSPContext,
     pub lr: Rav1dLoopRestorationDSPContext,
+    /// Kept syntactically last so that the preceding fields stay in the order the
+    /// loop-filter change was measured with. This struct is not `repr(C)`, so that is
+    /// source order rather than a layout guarantee.
+    lf_kind: LoopFilterKind,
 }
 
 impl Rav1dBitDepthDSPContext {
-    pub const fn _default<BD: BitDepth>() -> Self {
-        Self {
-            fg: Rav1dFilmGrainDSPContext::default::<BD>(),
-            ipred: Rav1dIntraPredDSPContext::default::<BD>(),
-            mc: Rav1dMCDSPContext::default::<BD>(),
-            itx: Rav1dInvTxfmDSPContext::default::<BD>(),
-            lf: Rav1dLoopFilterDSPContext::default::<BD>(),
-            cdef: Rav1dCdefDSPContext::default::<BD>(),
-            lr: Rav1dLoopRestorationDSPContext::default::<BD>(),
-        }
-    }
-
     pub const fn new<BD: BitDepth>(flags: CpuFlags, bpc: u8) -> Self {
+        let (lf, lf_kind) = Rav1dLoopFilterDSPContext::new::<BD>(flags);
         Self {
             fg: Rav1dFilmGrainDSPContext::new::<BD>(flags),
             ipred: Rav1dIntraPredDSPContext::new::<BD>(flags),
             mc: Rav1dMCDSPContext::new::<BD>(flags),
             itx: Rav1dInvTxfmDSPContext::new::<BD>(flags, bpc),
-            lf: Rav1dLoopFilterDSPContext::new::<BD>(flags),
+            lf,
             cdef: Rav1dCdefDSPContext::new::<BD>(flags),
             lr: Rav1dLoopRestorationDSPContext::new::<BD>(flags, bpc),
+            lf_kind,
         }
+    }
+
+    /// [`Self::new`] plus the debug-only check that `lf_kind` describes `lf`,
+    /// which [`Self::new`] cannot do itself as a `const fn`.
+    fn new_checked<BD: BitDepth>(flags: CpuFlags, bpc: u8) -> Self {
+        let this = Self::new::<BD>(flags, bpc);
+        #[cfg(debug_assertions)]
+        this.lf.debug_assert_kind::<BD>(this.lf_kind);
+        this
+    }
+
+    #[inline(always)]
+    pub(crate) fn lf(&self) -> &Rav1dLoopFilterDSPContext {
+        &self.lf
+    }
+
+    /// The tag describing the union arm held by every slot of [`Self::lf`].
+    #[inline(always)]
+    pub(crate) fn lf_kind(&self) -> LoopFilterKind {
+        self.lf_kind
     }
 
     pub fn get(bpc: u8) -> Option<&'static Self> {
@@ -133,15 +150,15 @@ impl Rav1dBitDepthDSPContext {
         Some(match bpc {
             8 => BPC8.get_or_init(|| {
                 let flags = rav1d_get_cpu_flags();
-                Self::new::<BitDepth8>(flags, bpc)
+                Self::new_checked::<BitDepth8>(flags, bpc)
             }),
             10 => BPC10.get_or_init(|| {
                 let flags = rav1d_get_cpu_flags();
-                Self::new::<BitDepth16>(flags, bpc)
+                Self::new_checked::<BitDepth16>(flags, bpc)
             }),
             12 => BPC12.get_or_init(|| {
                 let flags = rav1d_get_cpu_flags();
-                Self::new::<BitDepth16>(flags, bpc)
+                Self::new_checked::<BitDepth16>(flags, bpc)
             }),
             _ => return None,
         })
