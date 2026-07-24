@@ -161,18 +161,22 @@ impl Rav1dTasks {
         b: Rav1dTaskIndex,
         cond_signal: c_int,
     ) {
+        // The caller holds TaskThreadData::lock, which serializes queue-link changes.
         let ttd = &*c.task_thread;
         if c.flush.load(Ordering::SeqCst) {
             return;
         }
+        let tasks = self.tasks.try_read().unwrap();
         if a.is_some() {
-            assert_eq!(self.index(a).next(), b);
-            self.index(a).set_next(first);
+            assert_eq!(Self::index_in(&tasks, a).next(), b);
+            Self::index_in(&tasks, a).set_next(first);
         } else {
             self.head.store(first, Ordering::SeqCst);
         }
-        self.index(last).set_next(b);
-        reset_task_cur(c, ttd, self.index(first).frame_idx);
+        Self::index_in(&tasks, last).set_next(b);
+        let first_frame_idx = Self::index_in(&tasks, first).frame_idx;
+        drop(tasks);
+        reset_task_cur(c, ttd, first_frame_idx);
         if cond_signal != 0 && ttd.cond_signaled.fetch_or(1, Ordering::SeqCst) == 0 {
             ttd.cond.notify_one();
         }
@@ -185,42 +189,48 @@ impl Rav1dTasks {
         last: Rav1dTaskIndex,
         cond_signal: c_int,
     ) {
+        // The caller holds TaskThreadData::lock, which serializes queue-link changes.
         // insert task back into task queue
         let mut prev_t = Rav1dTaskIndex::NONE;
         let mut t = self.head.load(Ordering::SeqCst);
+        let tasks = self.tasks.try_read().unwrap();
         while t.is_some() {
             'next: {
                 // entropy coding precedes other steps
-                if self.index(t).type_0 == TaskType::TileEntropy {
-                    if self.index(first).type_0 > TaskType::TileEntropy {
+                if Self::index_in(&tasks, t).type_0 == TaskType::TileEntropy {
+                    if Self::index_in(&tasks, first).type_0 > TaskType::TileEntropy {
                         break 'next;
                     }
                     // both are entropy
-                    if self.index(first).sby > self.index(t).sby {
+                    if Self::index_in(&tasks, first).sby > Self::index_in(&tasks, t).sby {
                         break 'next;
                     }
-                    if self.index(first).sby < self.index(t).sby {
+                    if Self::index_in(&tasks, first).sby < Self::index_in(&tasks, t).sby {
+                        drop(tasks);
                         self.insert_tasks_between(c, first, last, prev_t, t, cond_signal);
                         return;
                     }
                     // same sby
                 } else {
-                    if self.index(first).type_0 == TaskType::TileEntropy {
+                    if Self::index_in(&tasks, first).type_0 == TaskType::TileEntropy {
+                        drop(tasks);
                         self.insert_tasks_between(c, first, last, prev_t, t, cond_signal);
                         return;
                     }
-                    if self.index(first).sby > self.index(t).sby {
+                    if Self::index_in(&tasks, first).sby > Self::index_in(&tasks, t).sby {
                         break 'next;
                     }
-                    if self.index(first).sby < self.index(t).sby {
+                    if Self::index_in(&tasks, first).sby < Self::index_in(&tasks, t).sby {
+                        drop(tasks);
                         self.insert_tasks_between(c, first, last, prev_t, t, cond_signal);
                         return;
                     }
                     // same sby
-                    if self.index(first).type_0 > self.index(t).type_0 {
+                    if Self::index_in(&tasks, first).type_0 > Self::index_in(&tasks, t).type_0 {
                         break 'next;
                     }
-                    if (self.index(first).type_0) < self.index(t).type_0 {
+                    if (Self::index_in(&tasks, first).type_0) < Self::index_in(&tasks, t).type_0 {
+                        drop(tasks);
                         self.insert_tasks_between(c, first, last, prev_t, t, cond_signal);
                         return;
                     }
@@ -229,23 +239,25 @@ impl Rav1dTasks {
 
                 // sort by tile-id
                 assert!(
-                    self.index(first).type_0 == TaskType::TileReconstruction
-                        || self.index(first).type_0 == TaskType::TileEntropy
+                    Self::index_in(&tasks, first).type_0 == TaskType::TileReconstruction
+                        || Self::index_in(&tasks, first).type_0 == TaskType::TileEntropy
                 );
-                assert!(self.index(first).type_0 == self.index(t).type_0);
-                assert!(self.index(t).sby == self.index(first).sby);
-                let t_tile_idx = self.index(first).tile_idx;
-                let p_tile_idx = self.index(t).tile_idx;
+                assert!(Self::index_in(&tasks, first).type_0 == Self::index_in(&tasks, t).type_0);
+                assert!(Self::index_in(&tasks, t).sby == Self::index_in(&tasks, first).sby);
+                let t_tile_idx = Self::index_in(&tasks, first).tile_idx;
+                let p_tile_idx = Self::index_in(&tasks, t).tile_idx;
                 assert!(t_tile_idx != p_tile_idx);
                 if !(t_tile_idx > p_tile_idx) {
+                    drop(tasks);
                     self.insert_tasks_between(c, first, last, prev_t, t, cond_signal);
                     return;
                 }
             }
             // next:
             prev_t = t;
-            t = self.index(t).next();
+            t = Self::index_in(&tasks, t).next();
         }
+        drop(tasks);
         self.insert_tasks_between(c, first, last, prev_t, Rav1dTaskIndex::NONE, cond_signal);
     }
 
@@ -281,14 +293,19 @@ impl Rav1dTasks {
     }
 
     #[inline]
-    fn index<'a>(&'a self, index: Rav1dTaskIndex) -> impl Deref<Target = Rav1dTask> + 'a {
+    fn index_in(tasks: &[Rav1dTask], index: Rav1dTaskIndex) -> &Rav1dTask {
         if let Some(index) = index.raw_index() {
-            RwLockReadGuard::map(self.tasks.try_read().unwrap(), |tasks| {
-                &tasks[index as usize]
-            })
+            &tasks[index as usize]
         } else {
             panic!("Cannot index with None");
         }
+    }
+
+    #[inline]
+    fn index<'a>(&'a self, index: Rav1dTaskIndex) -> impl Deref<Target = Rav1dTask> + 'a {
+        RwLockReadGuard::map(self.tasks.try_read().unwrap(), |tasks| {
+            Self::index_in(tasks, index)
+        })
     }
 
     #[inline]
@@ -311,6 +328,7 @@ impl Rav1dTasks {
                 tasks.extend(pending_tasks.drain(..));
                 start..tasks.len() as u32
             };
+            drop(pending_tasks);
 
             for i in range {
                 // 1-based index, so we have to add 1
