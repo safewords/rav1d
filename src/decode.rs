@@ -733,16 +733,14 @@ fn read_vartx_tree(
         }
     } else if txfm_mode != Rav1dTxfmMode::Switchable || b.skip != 0 {
         if txfm_mode == Rav1dTxfmMode::Switchable {
-            CaseSet::<32, false>::many(
-                [(&t.l, 1), (&f.a[t.a], 0)],
-                [bh4 as usize, bw4 as usize],
-                [by4 as usize, bx4 as usize],
-                |case, (dir, dir_index)| {
-                    // TODO check unwrap is optimized out
-                    let tx = TxfmSize::from_repr(b_dim[2 + dir_index] as _).unwrap();
-                    case.set_disjoint(&dir.tx, tx);
-                },
-            );
+            let l_tx = TxfmSize::from_repr(b_dim[3] as _).unwrap();
+            CaseSet::<32, false>::one((), bh4, by4 as usize, |case, ()| {
+                case.set_disjoint(&t.l.tx, l_tx);
+            });
+            let a_tx = TxfmSize::from_repr(b_dim[2] as _).unwrap();
+            CaseSet::<32, false>::one((), bw4, bx4 as usize, |case, ()| {
+                case.set_disjoint(&f.a[t.a].tx, a_tx);
+            });
         }
         uvtx = DAV1D_MAX_TXFM_SIZE_FOR_BS[bs as usize][f.cur.p.layout as usize];
     } else {
