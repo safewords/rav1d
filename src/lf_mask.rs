@@ -328,7 +328,10 @@ fn mask_edges_intra(
     let t = 1u32 << by4;
     let inner = (((t as u64) << h4) - (t as u64)) as u32;
     let inner = [inner as u16, (inner >> 16) as u16];
-    for x in (hstep..w4).step_by(hstep) {
+    // Stepped manually, as `mask_edges_inter` does: `step_by` computes its length
+    // with a division, which is live even when only the iteration is used.
+    let mut x = hstep;
+    while x < w4 {
         // SAFETY: No other mutable references to this sub-slice exist on other
         // threads.
         if inner[0] != 0 {
@@ -337,6 +340,7 @@ fn mask_edges_intra(
         if inner[1] != 0 {
             masks[0][bx4 + x][twl4c as usize][1].update(|it| it | inner[1]);
         }
+        x += hstep;
     }
 
     //            top
@@ -346,13 +350,15 @@ fn mask_edges_intra(
     let t = 1u32 << bx4;
     let inner = (((t as u64) << w4) - (t as u64)) as u32;
     let inner = [inner as u16, (inner >> 16) as u16];
-    for y in (vstep..h4).step_by(vstep) {
+    let mut y = vstep;
+    while y < h4 {
         if inner[0] != 0 {
             masks[1][by4 + y][thl4c as usize][0].update(|it| it | inner[0]);
         }
         if inner[1] != 0 {
             masks[1][by4 + y][thl4c as usize][1].update(|it| it | inner[1]);
         }
+        y += vstep;
     }
 
     CaseSet::<32, true>::many(
@@ -412,13 +418,15 @@ fn mask_edges_chroma(
         let t = 1u32 << cby4;
         let inner = (((t as u64) << ch4) - (t as u64)) as u32;
         let inner = [(inner & ((1 << vmask) - 1)) as u16, (inner >> vmask) as u16];
-        for x in (hstep..cw4).step_by(hstep) {
+        let mut x = hstep;
+        while x < cw4 {
             if inner[0] != 0 {
                 masks[0][cbx4 + x][twl4c as usize][0].update(|it| it | inner[0]);
             }
             if inner[1] != 0 {
                 masks[0][cbx4 + x][twl4c as usize][1].update(|it| it | inner[1]);
             }
+            x += hstep;
         }
 
         //            top
@@ -428,13 +436,15 @@ fn mask_edges_chroma(
         let t = 1u32 << cbx4;
         let inner = (((t as u64) << cw4) - (t as u64)) as u32;
         let inner = [(inner & ((1 << hmask) - 1)) as u16, (inner >> hmask) as u16];
-        for y in (vstep..ch4).step_by(vstep) {
+        let mut y = vstep;
+        while y < ch4 {
             if inner[0] != 0 {
                 masks[1][cby4 + y][thl4c as usize][0].update(|it| it | inner[0]);
             }
             if inner[1] != 0 {
                 masks[1][cby4 + y][thl4c as usize][1].update(|it| it | inner[1]);
             }
+            y += vstep;
         }
     }
 
