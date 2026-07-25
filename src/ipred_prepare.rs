@@ -200,18 +200,13 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
         _ => {}
     }
 
+    let needs = AV1_INTRA_PREDICTION_EDGES[mode as usize].needs;
+
     // `dst_top` starts with either the top or top-left sample depending on whether have_left is true
     let dst_top = if have_top
-        && (AV1_INTRA_PREDICTION_EDGES[mode as usize]
-            .needs
-            .contains(Needs::TOP)
-            || AV1_INTRA_PREDICTION_EDGES[mode as usize]
-                .needs
-                .contains(Needs::TOP_LEFT)
-            || AV1_INTRA_PREDICTION_EDGES[mode as usize]
-                .needs
-                .contains(Needs::LEFT)
-                && !have_left)
+        && (needs.contains(Needs::TOP)
+            || needs.contains(Needs::TOP_LEFT)
+            || needs.contains(Needs::LEFT) && !have_left)
     {
         let px_have = cmp::min(8 * tw, 4 * (w - x)) as usize;
         let n = px_have + have_left as usize;
@@ -225,19 +220,21 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
         &[]
     };
 
-    if AV1_INTRA_PREDICTION_EDGES[mode as usize]
-        .needs
-        .contains(Needs::LEFT)
-    {
+    if needs.contains(Needs::LEFT) {
         let sz = 4 * th as usize;
-        let left = &mut topleft_out[topleft_out_offset - sz..];
+        // Bound to exactly `sz` so the gather below needs no per-sample bounds check.
+        let left = &mut topleft_out[topleft_out_offset - sz..topleft_out_offset];
         if have_left {
             let px_have = cmp::min(sz, (h - y << 2) as usize);
-            for i in 0..px_have {
-                left[sz - 1 - i] = *(dst + (i as isize * stride - 1)).index::<BD>();
+            let (fill, gather) = left.split_at_mut(sz - px_have);
+            // `gather` is filled bottom-up: `left[sz - 1 - i] = dst[i * stride - 1]`.
+            let mut src = dst - 1usize;
+            for gather in gather.iter_mut().rev() {
+                *gather = *src.index::<BD>();
+                src += stride;
             }
-            if px_have < sz {
-                BD::pixel_set(left, left[sz - px_have], sz - px_have);
+            if !fill.is_empty() {
+                BD::pixel_set(fill, gather[0], fill.len());
             }
         } else {
             BD::pixel_set(
@@ -250,10 +247,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
                 sz,
             );
         }
-        if AV1_INTRA_PREDICTION_EDGES[mode as usize]
-            .needs
-            .contains(Needs::BOTTOM_LEFT)
-        {
+        if needs.contains(Needs::BOTTOM_LEFT) {
             let bottom_left = &mut topleft_out[topleft_out_offset - 2 * sz..];
             let have_bottomleft = if !have_left || y + th >= h {
                 false
@@ -274,10 +268,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
             }
         }
     }
-    if AV1_INTRA_PREDICTION_EDGES[mode as usize]
-        .needs
-        .contains(Needs::TOP)
-    {
+    if needs.contains(Needs::TOP) {
         let sz = 4 * tw as usize;
         let top = &mut topleft_out[topleft_out_offset + 1..];
         if have_top {
@@ -298,10 +289,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
                 sz,
             );
         }
-        if AV1_INTRA_PREDICTION_EDGES[mode as usize]
-            .needs
-            .contains(Needs::TOP_RIGHT)
-        {
+        if needs.contains(Needs::TOP_RIGHT) {
             let have_topright = if !have_top || x + tw >= w {
                 false
             } else {
@@ -321,10 +309,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
             }
         }
     }
-    if AV1_INTRA_PREDICTION_EDGES[mode as usize]
-        .needs
-        .contains(Needs::TOP_LEFT)
-    {
+    if needs.contains(Needs::TOP_LEFT) {
         // top-left sample and immediate neighbours
         let corner =
             <&mut [_; 3]>::try_from(&mut topleft_out[topleft_out_offset - 1..][..3]).unwrap();
