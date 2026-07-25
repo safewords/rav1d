@@ -297,8 +297,13 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
             };
             if have_topright {
                 let top_right = &mut top[sz..];
-                let px_have = cmp::min(sz, (w - x - tw << 2) as usize);
-                BD::pixel_copy(top_right, &dst_top[sz + have_left as usize..], px_have);
+                // `have_topright` implies `w - x > tw`, so `dst_top` holds more than `sz`
+                // samples past the top-left one and its remainder is exactly the
+                // `4 * (w - x - tw)` clamp; taking the length from the slice lets the
+                // copy's source bounds check fold away.
+                let dst_top = &dst_top[sz + have_left as usize..];
+                let px_have = cmp::min(sz, dst_top.len());
+                BD::pixel_copy(top_right, dst_top, px_have);
                 if px_have < sz {
                     let fill_value = top_right[px_have - 1];
                     BD::pixel_set(&mut top_right[px_have..], fill_value, sz - px_have);
