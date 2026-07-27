@@ -1103,7 +1103,7 @@ fn decode_b(
     let has_chroma = f.cur.p.layout != Rav1dPixelLayout::I400
         && (bw4 > ss_hor || t.b.x & 1 != 0)
         && (bh4 > ss_ver || t.b.y & 1 != 0);
-    let frame_type = f.frame_hdr.as_ref().unwrap().frame_type;
+    let frame_type = f.frame_hdr().frame_type;
 
     let FrameThreadPassState::First(ts_c) = pass else {
         match &b.ii {
@@ -1248,7 +1248,7 @@ fn decode_b(
 
     // segment_id (if seg_feature for skip/ref/gmv is enabled)
     let mut seg_pred = false;
-    let frame_hdr: &Rav1dFrameHeader = &f.frame_hdr.as_ref().unwrap();
+    let frame_hdr = f.frame_hdr();
     if frame_hdr.segmentation.enabled != 0 {
         if frame_hdr.segmentation.update_map == 0 {
             b.seg_id = f
@@ -1700,7 +1700,6 @@ fn decode_b(
 
         let mut y_mode = y_mode;
         let mut y_angle = y_angle;
-        let seq_hdr = f.seq_hdr();
         if y_mode == DC_PRED
             && pal_sz[0] == 0
             && cmp::max(b_dim[2], b_dim[3]) <= 3
@@ -1794,8 +1793,6 @@ fn decode_b(
             }
         }
 
-        let frame_hdr = f.frame_hdr();
-
         let tx = if frame_hdr.segmentation.lossless[b.seg_id.get()] {
             b.uvtx = TxfmSize::S4x4;
             b.uvtx
@@ -1840,7 +1837,7 @@ fn decode_b(
             (bd_fn.recon_b_intra)(f, t, Some(ts_c), bs, intra_edge_flags, b, &intra);
         }
 
-        if f.frame_hdr().loopfilter.level_y != [0, 0] {
+        if frame_hdr.loopfilter.level_y != [0, 0] {
             let lflvl = match ts.lflvl.get() {
                 TileStateRef::Frame => &f.lf.lvl,
                 TileStateRef::Local => &*ts.lflvlmem.try_read().unwrap(),
@@ -1877,7 +1874,7 @@ fn decode_b(
         } else {
             y_mode
         };
-        let is_inter_or_switch = f.frame_hdr().frame_type.is_inter_or_switch();
+        let is_inter_or_switch = frame_hdr.frame_type.is_inter_or_switch();
         // Unrolled from a `CaseSet::many` over `[(&t.l, t_dim.lh, 1), (ta,
         // t_dim.lw, 0)]` into 2 direct `CaseSet::one` calls (mirroring the C
         // code's 2 independent `case_set` macro expansions inside its
@@ -1948,7 +1945,6 @@ fn decode_b(
                 );
             }
         }
-        let frame_hdr = f.frame_hdr();
         if frame_hdr.frame_type.is_inter_or_switch() || frame_hdr.allow_intrabc {
             splat_intraref(c, t, &f.rf, bs, bw4 as usize, bh4 as usize);
         }
@@ -2994,7 +2990,6 @@ fn decode_b(
             (bd_fn.recon_b_inter)(f, t, Some(ts_c), bs, b, inter)?;
         }
 
-        let frame_hdr = f.frame_hdr();
         if frame_hdr.loopfilter.level_y != [0, 0] {
             let is_globalmv =
                 (inter_mode == if is_comp { GLOBALMV_GLOBALMV } else { GLOBALMV }) as c_int;
@@ -3153,7 +3148,7 @@ fn decode_b(
     }
 
     // update contexts
-    let frame_hdr = &***f.frame_hdr.as_ref().unwrap();
+    let frame_hdr = f.frame_hdr();
     if frame_hdr.segmentation.enabled != 0 && frame_hdr.segmentation.update_map != 0 {
         // Need checked casts here because we're using `from_raw_parts_mut` and an overflow would be UB.
         let [by, bx, bh4, bw4] = [t.b.y, t.b.x, bh4, bw4].map(|it| usize::try_from(it).unwrap());
