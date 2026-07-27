@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 
-use std::cmp;
 use std::ffi::{c_int, c_uint};
+use std::{cmp, mem};
 
 use bitflags::bitflags;
 use libc::ptrdiff_t;
@@ -175,12 +175,15 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
     let y_stride: ptrdiff_t = BD::pxstride(f.cur.stride[0]);
     let uv_stride: ptrdiff_t = BD::pxstride(f.cur.stride[1]);
 
-    let mut bit = false;
-
     // In C, this is declared uninitialized inside the loop,
     // so it doesn't matter what it is initialized to in Rust as long as it is initialized,
     // which means we can hoist it out of the loop to safely avoid re-initializing it.
     let mut lr_bak = Align16([[[[0.into(); 2 /* x */]; 8 /* y */]; 3 /* plane */ ]; 2 /* idx */]);
+    // C toggles a `bit` index into `lr_bak`; swapping two borrows of its halves
+    // keeps the same alternation without re-indexing the array on every use.
+    let [bak0, bak1] = &mut lr_bak.0;
+    let mut cur_bak = bak0;
+    let mut next_bak = bak1;
 
     for by in (by_start..by_end).step_by(2) {
         let tf = tc.top_pre_cdef_toggle != 0;
@@ -241,7 +244,9 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                 uv_sec_lvl <<= bitdepth_min_8;
 
                 let mut bptrs = iptrs;
-                for bx in (sbx * sbsz..cmp::min((sbx + 1) * sbsz, f.bw)).step_by(2) {
+                let bx_end = cmp::min((sbx + 1) * sbsz, f.bw);
+                let mut bx = sbx * sbsz;
+                while bx < bx_end {
                     if bx + 2 >= f.bw {
                         edges.remove(CdefEdgeFlags::HAVE_RIGHT);
                     }
@@ -260,11 +265,11 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                         if !do_left.is_empty() && edges.contains(CdefEdgeFlags::HAVE_LEFT) {
                             // we didn't backup the prefilter data because it wasn't
                             // there, so do it here instead
-                            backup2x8::<BD>(&mut lr_bak[bit as usize], &bptrs, 0, layout, do_left);
+                            backup2x8::<BD>(cur_bak, &bptrs, 0, layout, do_left);
                         }
                         if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
                             // backup pre-filter data for next iteration
-                            backup2x8::<BD>(&mut lr_bak[!bit as usize], &bptrs, 8, layout, flag);
+                            backup2x8::<BD>(next_bak, &bptrs, 8, layout, flag);
                         }
 
                         let mut variance = 0;
@@ -341,7 +346,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                             if adj_y_pri_lvl != 0 || y_sec_lvl != 0 {
                                 f.dsp.cdef.fb[0].call::<BD>(
                                     bptrs[0],
-                                    &lr_bak[bit as usize][0],
+                                    &cur_bak[0],
                                     top,
                                     bot,
                                     adj_y_pri_lvl,
@@ -355,7 +360,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                         } else if y_sec_lvl != 0 {
                             f.dsp.cdef.fb[0].call::<BD>(
                                 bptrs[0],
-                                &lr_bak[bit as usize][0],
+                                &cur_bak[0],
                                 top,
                                 bot,
                                 0,
@@ -441,7 +446,7 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
 
                                 f.dsp.cdef.fb[uv_idx as usize].call::<BD>(
                                     bptrs[pl],
-                                    &lr_bak[bit as usize][pl],
+                                    &cur_bak[pl],
                                     top,
                                     bot,
                                     uv_pri_lvl.into(),
@@ -453,13 +458,14 @@ pub(crate) fn rav1d_cdef_brow<BD: BitDepth>(
                                 );
                             }
                         }
-                        bit = !bit;
+                        mem::swap(&mut cur_bak, &mut next_bak);
                         last_skip = false;
                     }
                     bptrs[0] += 8usize;
                     bptrs[1] += 8usize >> ss_hor;
                     bptrs[2] += 8usize >> ss_hor;
                     edges.insert(CdefEdgeFlags::HAVE_LEFT);
+                    bx += 2;
                 }
             }
             iptrs[0] += sbsz as usize * 4;
