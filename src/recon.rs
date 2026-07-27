@@ -1429,6 +1429,8 @@ fn read_coef_tree<BD: BitDepth>(
             };
         if t.frame_thread.pass != 2 {
             let ts_c = ts_c.as_deref_mut().unwrap();
+            // Bind the above-context row once for both uses below.
+            let a = &f.a[t.a];
             eob = decode_coefs::<BD>(
                 f,
                 t.ts,
@@ -1436,7 +1438,7 @@ fn read_coef_tree<BD: BitDepth>(
                 debug_block_info!(f, t.b),
                 &mut t.scratch,
                 &mut t.cf,
-                &mut f.a[t.a].lcoef.index_mut(bx4..bx4 + txw as usize),
+                &mut a.lcoef.index_mut(bx4..bx4 + txw as usize),
                 &mut t.l.lcoef.index_mut(by4..by4 + txh as usize),
                 ytx,
                 bs,
@@ -1468,7 +1470,7 @@ fn read_coef_tree<BD: BitDepth>(
                 cmp::min(txw as c_int, f.bw - t.b.x) as usize,
                 bx4,
                 |case, ()| {
-                    case.set_disjoint(&f.a[t.a].lcoef, cf_ctx);
+                    case.set_disjoint(&a.lcoef, cf_ctx);
                 },
             );
             let txtp_map =
@@ -1943,6 +1945,8 @@ fn obmc<BD: BitDepth>(
     h4: c_int,
 ) -> Result<(), ()> {
     assert!(t.b.x & 1 == 0 && t.b.y & 1 == 0);
+    // Bind the above-context row once instead of re-indexing inside the row loop.
+    let a = &f.a[t.a];
     let r = &t.rt.r[(t.b.y as usize & 31) + 5 - 1..];
     let scratch = t.scratch.inter_mut();
     let lap = scratch.lap_inter.lap_mut::<BD>();
@@ -1987,8 +1991,8 @@ fn obmc<BD: BitDepth>(
                     a_r.mv.mv[0],
                     &f.refp[a_r.r#ref.r#ref[0] as usize - 1],
                     a_r.r#ref.r#ref[0] as usize - 1,
-                    DAV1D_FILTER_2D[*f.a[t.a].filter[1].index((bx4 + x + 1) as usize) as usize]
-                        [*f.a[t.a].filter[0].index((bx4 + x + 1) as usize) as usize],
+                    DAV1D_FILTER_2D[*a.filter[1].index((bx4 + x + 1) as usize) as usize]
+                        [*a.filter[0].index((bx4 + x + 1) as usize) as usize],
                 )?;
                 f.dsp.mc.blend_h.call::<BD>(
                     dst + (x * h_mul) as usize,
@@ -2156,6 +2160,9 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
     let bd = BD::from_c(f.bitdepth_max);
     let cur_data = &f.cur.data.as_ref().unwrap().data;
     let ts = &f.ts[t.ts];
+    // `t.a` never changes here, so bind the above-context row once instead of
+    // re-indexing (bounds check + stride multiply) at each of its seven uses.
+    let a = &f.a[t.a];
 
     let bx4 = t.b.x & 31;
     let by4 = t.b.y & 31;
@@ -2221,9 +2228,8 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 }
             }
 
-            let intra_flags = sm_flag(&f.a[t.a], bx4 as usize)
-                | sm_flag(&mut t.l, by4 as usize)
-                | intra_edge_filter_flag;
+            let intra_flags =
+                sm_flag(a, bx4 as usize) | sm_flag(&mut t.l, by4 as usize) | intra_edge_filter_flag;
             let sb_has_tr = if (init_x + 16) < w4 {
                 true
             } else if init_y != 0 {
@@ -2366,9 +2372,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                 debug_block_info!(f, t.b),
                                 &mut t.scratch,
                                 &mut t.cf,
-                                &mut f.a[t.a]
-                                    .lcoef
-                                    .index_mut(a_start..a_start + t_dim.w as usize),
+                                &mut a.lcoef.index_mut(a_start..a_start + t_dim.w as usize),
                                 &mut t.l.lcoef.index_mut(l_start..l_start + t_dim.h as usize),
                                 intra.tx,
                                 bs,
@@ -2389,7 +2393,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                 );
                             }
                             CaseSet::<16, true>::many(
-                                [&t.l, &f.a[t.a]],
+                                [&t.l, a],
                                 [
                                     cmp::min(t_dim.h as i32, f.bh - t.b.y) as usize,
                                     cmp::min(t_dim.w as i32, f.bw - t.b.x) as usize,
@@ -2423,7 +2427,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                         }
                     } else if t.frame_thread.pass == 0 {
                         CaseSet::<16, false>::many(
-                            [&t.l, &f.a[t.a]],
+                            [&t.l, a],
                             [t_dim.h as usize, t_dim.w as usize],
                             [(by4 + y) as usize, (bx4 + x) as usize],
                             |case, dir| {
@@ -2579,8 +2583,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 }
             }
 
-            let sm_uv_fl =
-                sm_uv_flag(&f.a[t.a], cbx4 as usize) | sm_uv_flag(&mut t.l, cby4 as usize);
+            let sm_uv_fl = sm_uv_flag(a, cbx4 as usize) | sm_uv_flag(&mut t.l, cby4 as usize);
             let uv_sb_has_tr = if init_x + 16 >> ss_hor < cw4 {
                 true
             } else if init_y != 0 {
@@ -2730,7 +2733,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                             } else {
                                 let mut cf_ctx: u8 = 0;
                                 let a_start = (cbx4 + x) as usize;
-                                let a_ccoef = &f.a[t.a].ccoef[pl];
+                                let a_ccoef = &a.ccoef[pl];
                                 let l_start = (cby4 + y) as usize;
                                 let l_ccoef = &t.l.ccoef[pl];
                                 eob = decode_coefs::<BD>(
@@ -2800,7 +2803,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                             }
                         } else if t.frame_thread.pass == 0 {
                             CaseSet::<16, false>::many(
-                                [&t.l, &f.a[t.a]],
+                                [&t.l, a],
                                 [uv_t_dim.h as usize, uv_t_dim.w as usize],
                                 [(cby4 + y) as usize, (cbx4 + x) as usize],
                                 |case, dir| {
@@ -2834,6 +2837,9 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
     let cur_data = &f.cur.data.as_ref().unwrap().data;
 
     let ts = &f.ts[t.ts];
+    // `t.a` never changes here, so bind the above-context row once instead of
+    // re-indexing (bounds check + stride multiply) at each of its uses.
+    let a = &f.a[t.a];
     let bx4 = t.b.x & 31;
     let by4 = t.b.y & 31;
     let ss_ver = (f.cur.p.layout == Rav1dPixelLayout::I420) as c_int;
@@ -3298,9 +3304,8 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                     h_off = 2;
                 }
                 if bh4 == ss_ver {
-                    let top_filter_2d = DAV1D_FILTER_2D
-                        [*f.a[t.a].filter[1].index(bx4 as usize) as usize]
-                        [*f.a[t.a].filter[0].index(bx4 as usize) as usize];
+                    let top_filter_2d = DAV1D_FILTER_2D[*a.filter[1].index(bx4 as usize) as usize]
+                        [*a.filter[0].index(bx4 as usize) as usize];
                     for pl in 0..2 {
                         let r = *f.rf.r.index(r[0] + t.b.x as usize);
                         mc::<BD>(
@@ -3511,7 +3516,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
     if b.skip != 0 {
         // reset coef contexts
         CaseSet::<32, false>::many(
-            [&t.l, &f.a[t.a]],
+            [&t.l, a],
             [bh4 as usize, bw4 as usize],
             [by4 as usize, bx4 as usize],
             |case, dir| {
@@ -3520,7 +3525,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
         );
         if has_chroma {
             CaseSet::<32, false>::many(
-                [&t.l, &f.a[t.a]],
+                [&t.l, a],
                 [cbh4 as usize, cbw4 as usize],
                 [cby4 as usize, cbx4 as usize],
                 |case, dir| {
@@ -3612,7 +3617,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                                 let mut cf_ctx = 0;
                                 txtp = t.scratch.inter_intra().ac_txtp_map.txtp_map()
                                     [((by4 + (y << ss_ver)) * 32 + bx4 + (x << ss_hor)) as usize];
-                                let a_ccoef = &f.a[t.a].ccoef[pl];
+                                let a_ccoef = &a.ccoef[pl];
                                 let a_start = (cbx4 + x) as usize;
                                 let l_ccoef = &t.l.ccoef[pl];
                                 let l_start = (cby4 + y) as usize;
