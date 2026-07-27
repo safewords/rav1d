@@ -2190,10 +2190,15 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
     let intra_edge_filter = f.seq_hdr.as_ref().unwrap().intra_edge_filter;
     let intra_edge_filter_flag = (intra_edge_filter as c_int) << 10;
 
-    for init_y in (0..h4).step_by(16) {
+    // Stepped by hand: `(0..h4).step_by(16)` drags `StepBy`'s `first_take` state
+    // through the frame of this register-starved function (see `cdef_apply`'s
+    // hand-stepped inner loop for the same shape).
+    let mut init_y = 0;
+    while init_y < h4 {
         let sub_h4 = cmp::min(h4, 16 + init_y);
         let sub_ch4 = cmp::min(ch4, init_y + 16 >> ss_ver);
-        for init_x in (0..w4).step_by(16) {
+        let mut init_x = 0;
+        while init_x < w4 {
             if intra.pal_sz[0] != 0 {
                 let y_dst = &cur_data[0];
                 let y_dst = y_dst.with_offset::<BD>()
@@ -2446,6 +2451,8 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
             t.b.y -= y;
 
             if !has_chroma {
+                // The loop is stepped by hand, so `continue` must step too.
+                init_x += 16;
                 continue;
             }
 
@@ -2821,7 +2828,9 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 }
                 t.b.y -= y << ss_ver;
             }
+            init_x += 16;
         }
+        init_y += 16;
     }
 }
 
