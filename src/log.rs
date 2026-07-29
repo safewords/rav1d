@@ -719,9 +719,9 @@ use crate::src::internal::ScalableMotionParams;
 pub unsafe extern "C" fn dav1d_log_default_callback(
     _cookie: *mut libc::c_void,
     format: *const libc::c_char,
-    mut ap: ::core::ffi::VaList,
+    ap: ::core::ffi::VaList,
 ) {
-    vfprintf(stderr, format, ap.as_va_list());
+    vfprintf(stderr, format, ap);
 }
 #[no_mangle]
 #[cold]
@@ -744,10 +744,9 @@ pub unsafe extern "C" fn dav1d_log(
     if ((*c).logger.callback).is_none() {
         return;
     }
-    let mut ap: ::core::ffi::VaListImpl;
-    ap = args.clone();
+    let ap = args.clone();
     ((*c).logger.callback)
         .expect(
             "non-null function pointer",
-        )((*c).logger.cookie, format, ap.as_va_list());
+        )((*c).logger.cookie, format, ap);
 }

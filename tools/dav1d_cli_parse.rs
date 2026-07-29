@@ -371,9 +371,8 @@ unsafe extern "C" fn usage(
     mut args: ...
 ) {
     if !reason.is_null() {
-        let mut args_0: ::core::ffi::VaListImpl;
-        args_0 = args.clone();
-        vfprintf(stderr, reason, args_0.as_va_list());
+        let args_0 = args.clone();
+        vfprintf(stderr, reason, args_0);
         fprintf(stderr, b"\n\n\0" as *const u8 as *const libc::c_char);
     }
     fprintf(
