@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![allow(internal_features)]
 #![allow(mutable_transmutes)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]

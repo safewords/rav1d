@@ -36,7 +36,7 @@ use crate::src::mem::dav1d_free_aligned;
 
 #[inline]
 pub unsafe extern "C" fn dav1d_ref_inc(ref_0: *mut Dav1dRef) {
-    ::core::intrinsics::atomic_xadd_relaxed(&mut (*ref_0).ref_cnt, 1 as libc::c_int);
+    ::core::intrinsics::atomic_xadd::<_, _, { ::core::intrinsics::AtomicOrdering::Relaxed }>(&mut (*ref_0).ref_cnt, 1 as libc::c_int);
 }
 
 unsafe extern "C" fn default_free_callback(
@@ -144,7 +144,7 @@ pub unsafe extern "C" fn dav1d_ref_dec(pref: *mut *mut Dav1dRef) {
         return;
     }
     *pref = 0 as *mut Dav1dRef;
-    if ::core::intrinsics::atomic_xsub_seqcst(
+    if ::core::intrinsics::atomic_xsub::<_, _, { ::core::intrinsics::AtomicOrdering::SeqCst }>(
         &mut (*ref_0).ref_cnt as *mut atomic_int,
         1 as libc::c_int,
     ) == 1 as libc::c_int
@@ -161,7 +161,7 @@ pub unsafe extern "C" fn dav1d_ref_dec(pref: *mut *mut Dav1dRef) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn dav1d_ref_is_writable(ref_0: *mut Dav1dRef) -> libc::c_int {
-    return (::core::intrinsics::atomic_load_seqcst(
+    return (::core::intrinsics::atomic_load::<_, { ::core::intrinsics::AtomicOrdering::SeqCst }>(
         &mut (*ref_0).ref_cnt as *mut atomic_int,
     ) == 1 as libc::c_int && !((*ref_0).data).is_null()) as libc::c_int;
 }

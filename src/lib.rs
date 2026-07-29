@@ -1787,21 +1787,21 @@ unsafe extern "C" fn drain_picture(
         if (*c).frame_thread.next == (*c).n_fc {
             (*c).frame_thread.next = 0 as libc::c_int as libc::c_uint;
         }
-        let mut first: libc::c_uint = ::core::intrinsics::atomic_load_seqcst(
+        let mut first: libc::c_uint = ::core::intrinsics::atomic_load::<_, { ::core::intrinsics::AtomicOrdering::SeqCst }>(
             &mut (*c).task_thread.first,
         );
         if first.wrapping_add(1 as libc::c_uint) < (*c).n_fc {
-            ::core::intrinsics::atomic_xadd_seqcst(
+            ::core::intrinsics::atomic_xadd::<_, _, { ::core::intrinsics::AtomicOrdering::SeqCst }>(
                 &mut (*c).task_thread.first,
                 1 as libc::c_uint,
             );
         } else {
-            ::core::intrinsics::atomic_store_seqcst(
+            ::core::intrinsics::atomic_store::<_, { ::core::intrinsics::AtomicOrdering::SeqCst }>(
                 &mut (*c).task_thread.first,
                 0 as libc::c_int as libc::c_uint,
             );
         }
-        let fresh0 = ::core::intrinsics::atomic_cxchg_seqcst_seqcst(
+        let fresh0 = ::core::intrinsics::atomic_cxchg::<_, { ::core::intrinsics::AtomicOrdering::SeqCst }, { ::core::intrinsics::AtomicOrdering::SeqCst }>(
             &mut (*c).task_thread.reset_task_cur,
             *&mut first,
             (2147483647 as libc::c_int as libc::c_uint)
@@ -1822,7 +1822,7 @@ unsafe extern "C" fn drain_picture(
             return error;
         }
         if !((*out_delayed).p.data[0 as libc::c_int as usize]).is_null() {
-            let progress: libc::c_uint = ::core::intrinsics::atomic_load_relaxed(
+            let progress: libc::c_uint = ::core::intrinsics::atomic_load::<_, { ::core::intrinsics::AtomicOrdering::Relaxed }>(
                 &mut *((*out_delayed).progress).offset(1 as libc::c_int as isize)
                     as *mut atomic_uint,
             );
@@ -2135,7 +2135,7 @@ pub unsafe extern "C" fn dav1d_flush(c: *mut Dav1dContext) {
     {
         return;
     }
-    ::core::intrinsics::atomic_store_seqcst((*c).flush, 1 as libc::c_int);
+    ::core::intrinsics::atomic_store::<_, { ::core::intrinsics::AtomicOrdering::SeqCst }>((*c).flush, 1 as libc::c_int);
     if (*c).n_tc > 1 as libc::c_int as libc::c_uint {
         pthread_mutex_lock(&mut (*c).task_thread.lock);
         let mut i_0: libc::c_uint = 0 as libc::c_int as libc::c_uint;
@@ -2178,13 +2178,13 @@ pub unsafe extern "C" fn dav1d_flush(c: *mut Dav1dContext) {
         }
         *&mut (*c).task_thread.first = 0 as libc::c_int as libc::c_uint;
         (*c).task_thread.cur = (*c).n_fc;
-        ::core::intrinsics::atomic_store_seqcst(
+        ::core::intrinsics::atomic_store::<_, { ::core::intrinsics::AtomicOrdering::SeqCst }>(
             &mut (*c).task_thread.reset_task_cur,
             (2147483647 as libc::c_int as libc::c_uint)
                 .wrapping_mul(2 as libc::c_uint)
                 .wrapping_add(1 as libc::c_uint),
         );
-        ::core::intrinsics::atomic_store_seqcst(
+        ::core::intrinsics::atomic_store::<_, { ::core::intrinsics::AtomicOrdering::SeqCst }>(
             &mut (*c).task_thread.cond_signaled,
             0 as libc::c_int,
         );
@@ -2214,7 +2214,7 @@ pub unsafe extern "C" fn dav1d_flush(c: *mut Dav1dContext) {
         }
         (*c).frame_thread.next = 0 as libc::c_int as libc::c_uint;
     }
-    ::core::intrinsics::atomic_store_seqcst((*c).flush, 0 as libc::c_int);
+    ::core::intrinsics::atomic_store::<_, { ::core::intrinsics::AtomicOrdering::SeqCst }>((*c).flush, 0 as libc::c_int);
 }
 #[no_mangle]
 #[cold]
