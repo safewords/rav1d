@@ -14,9 +14,9 @@ extern "C" {
         _: size_t,
         _: *mut libc::FILE,
     ) -> size_t;
-    fn fseeko64(
+    fn fseeko(
         __stream: *mut libc::FILE,
-        __off: __off64_t,
+        __off: libc::off_t,
         __whence: libc::c_int,
     ) -> libc::c_int;
     fn feof(__stream: *mut libc::FILE) -> libc::c_int;
@@ -24,7 +24,6 @@ extern "C" {
     fn dav1d_data_unref(data: *mut Dav1dData);
     fn dav1d_data_create(data: *mut Dav1dData, sz: size_t) -> *mut uint8_t;
 }
-use crate::include::sys::types::__off64_t;
 use crate::include::dav1d::headers::Dav1dObuType;
 use crate::include::dav1d::headers::DAV1D_OBU_TD;
 
@@ -265,9 +264,9 @@ unsafe extern "C" fn section5_open(
         if res < 0 as libc::c_int {
             return -(1 as libc::c_int);
         }
-        fseeko64((*c).f, len as __off64_t, 1 as libc::c_int);
+        fseeko((*c).f, len as libc::off_t, 1 as libc::c_int);
     }
-    fseeko64((*c).f, 0, 0 as libc::c_int);
+    fseeko((*c).f, 0, 0 as libc::c_int);
     return 0 as libc::c_int;
 }
 unsafe extern "C" fn section5_read(
@@ -302,7 +301,7 @@ unsafe extern "C" fn section5_read(
             } else if obu_type as libc::c_uint
                 == DAV1D_OBU_TD as libc::c_int as libc::c_uint
             {
-                fseeko64((*c).f, -(1 as libc::c_int) as __off64_t, 1);
+                fseeko((*c).f, -(1 as libc::c_int) as libc::off_t, 1);
                 break;
             }
             let has_length_field: libc::c_int = byte[0 as libc::c_int as usize]
@@ -331,11 +330,11 @@ unsafe extern "C" fn section5_read(
             total_bytes = total_bytes.wrapping_add(
                     ((1 as libc::c_int + has_extension + res) as size_t)
                         .wrapping_add(len));
-            fseeko64((*c).f, len as __off64_t, 1 as libc::c_int);
+            fseeko((*c).f, len as libc::off_t, 1 as libc::c_int);
             first = 0 as libc::c_int;
         }
     }
-    fseeko64((*c).f, -(total_bytes as __off64_t), 1 as libc::c_int);
+    fseeko((*c).f, -(total_bytes as libc::off_t), 1 as libc::c_int);
     let mut ptr: *mut uint8_t = dav1d_data_create(data, total_bytes);
     if ptr.is_null() {
         return -(1 as libc::c_int);
