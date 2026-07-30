@@ -1,3 +1,5 @@
+#![allow(dangerous_implicit_autorefs)]
+
 use crate::include::stddef::*;
 use crate::include::stdint::*;
 use ::libc;
