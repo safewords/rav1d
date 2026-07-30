@@ -1,5 +1,7 @@
 use crate::include::stddef::*;
 use crate::include::stdint::*;
+#[cfg(all(feature = "asm", any(target_arch = "arm", target_arch = "aarch64")))]
+use crate::src::align::Align16;
 use ::libc;
 use cfg_if::cfg_if;
 extern "C" {
@@ -1291,9 +1293,9 @@ unsafe extern "C" fn sgr_filter_3x3_neon(
     edges: LrEdgeFlags,
     bitdepth_max: libc::c_int,
 ) {
-    let mut tmp: [int16_t; 24576] = [0; 24576];
+    let mut tmp = Align16([0i16; 24576]);
     dav1d_sgr_filter1_neon(
-        tmp.as_mut_ptr(),
+        tmp.0.as_mut_ptr(),
         dst,
         stride,
         left,
@@ -1309,7 +1311,7 @@ unsafe extern "C" fn sgr_filter_3x3_neon(
         stride,
         dst,
         stride,
-        tmp.as_mut_ptr(),
+        tmp.0.as_mut_ptr(),
         w,
         h,
         (*params).sgr.w1 as libc::c_int,
@@ -1330,16 +1332,16 @@ unsafe extern "C" fn dav1d_sgr_filter1_neon(
     edges: LrEdgeFlags,
     bitdepth_max: libc::c_int,
 ) {
-    let mut sumsq_mem: [int32_t; 27208] = [0; 27208];
-    let sumsq: *mut int32_t = &mut *sumsq_mem
+    let mut sumsq_mem = Align16([0i32; 27208]);
+    let sumsq: *mut int32_t = &mut *sumsq_mem.0
         .as_mut_ptr()
         .offset(
             ((384 as libc::c_int + 16 as libc::c_int) * 2 as libc::c_int
                 + 8 as libc::c_int) as isize,
         ) as *mut int32_t;
     let a: *mut int32_t = sumsq;
-    let mut sum_mem: [int16_t; 27216] = [0; 27216];
-    let sum: *mut int16_t = &mut *sum_mem
+    let mut sum_mem = Align16([0i16; 27216]);
+    let sum: *mut int16_t = &mut *sum_mem.0
         .as_mut_ptr()
         .offset(
             ((384 as libc::c_int + 16 as libc::c_int) * 2 as libc::c_int
@@ -1397,16 +1399,16 @@ unsafe extern "C" fn dav1d_sgr_filter2_neon(
     edges: LrEdgeFlags,
     bitdepth_max: libc::c_int,
 ) {
-    let mut sumsq_mem: [int32_t; 27208] = [0; 27208];
-    let sumsq: *mut int32_t = &mut *sumsq_mem
+    let mut sumsq_mem = Align16([0i32; 27208]);
+    let sumsq: *mut int32_t = &mut *sumsq_mem.0
         .as_mut_ptr()
         .offset(
             ((384 as libc::c_int + 16 as libc::c_int) * 2 as libc::c_int
                 + 8 as libc::c_int) as isize,
         ) as *mut int32_t;
     let a: *mut int32_t = sumsq;
-    let mut sum_mem: [int16_t; 27216] = [0; 27216];
-    let sum: *mut int16_t = &mut *sum_mem
+    let mut sum_mem = Align16([0i16; 27216]);
+    let sum: *mut int16_t = &mut *sum_mem.0
         .as_mut_ptr()
         .offset(
             ((384 as libc::c_int + 16 as libc::c_int) * 2 as libc::c_int
@@ -1463,9 +1465,9 @@ unsafe extern "C" fn sgr_filter_5x5_neon(
     edges: LrEdgeFlags,
     bitdepth_max: libc::c_int,
 ) {
-    let mut tmp: [int16_t; 24576] = [0; 24576];
+    let mut tmp = Align16([0i16; 24576]);
     dav1d_sgr_filter2_neon(
-        tmp.as_mut_ptr(),
+        tmp.0.as_mut_ptr(),
         dst,
         stride,
         left,
@@ -1481,7 +1483,7 @@ unsafe extern "C" fn sgr_filter_5x5_neon(
         stride,
         dst,
         stride,
-        tmp.as_mut_ptr(),
+        tmp.0.as_mut_ptr(),
         w,
         h,
         (*params).sgr.w0 as libc::c_int,
@@ -1501,10 +1503,10 @@ unsafe extern "C" fn sgr_filter_mix_neon(
     edges: LrEdgeFlags,
     bitdepth_max: libc::c_int,
 ) {
-    let mut tmp1: [int16_t; 24576] = [0; 24576];
-    let mut tmp2: [int16_t; 24576] = [0; 24576];
+    let mut tmp1 = Align16([0i16; 24576]);
+    let mut tmp2 = Align16([0i16; 24576]);
     dav1d_sgr_filter2_neon(
-        tmp1.as_mut_ptr(),
+        tmp1.0.as_mut_ptr(),
         dst,
         stride,
         left,
@@ -1516,7 +1518,7 @@ unsafe extern "C" fn sgr_filter_mix_neon(
         bitdepth_max,
     );
     dav1d_sgr_filter1_neon(
-        tmp2.as_mut_ptr(),
+        tmp2.0.as_mut_ptr(),
         dst,
         stride,
         left,
@@ -1533,8 +1535,8 @@ unsafe extern "C" fn sgr_filter_mix_neon(
         stride,
         dst,
         stride,
-        tmp1.as_mut_ptr(),
-        tmp2.as_mut_ptr(),
+        tmp1.0.as_mut_ptr(),
+        tmp2.0.as_mut_ptr(),
         w,
         h,
         wt.as_ptr(),

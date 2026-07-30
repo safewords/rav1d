@@ -1,6 +1,8 @@
 use crate::include::stdint::*;
 use ::libc;
+use crate::src::align::Align16;
 use crate::src::align::Align64;
+use crate::src::align::Align8;
 use crate::include::dav1d::headers::DAV1D_FILTER_BILINEAR;
 use crate::include::dav1d::headers::DAV1D_FILTER_8TAP_SHARP;
 use crate::include::dav1d::headers::DAV1D_FILTER_8TAP_SMOOTH;
@@ -1561,7 +1563,7 @@ pub static mut dav1d_sgr_x_by_x: Align64<[uint8_t; 256]> = Align64([
     0 as libc::c_int as uint8_t,
 ]);
 #[no_mangle]
-pub static mut dav1d_mc_subpel_filters: [[[int8_t; 8]; 15]; 6] = [
+pub static mut dav1d_mc_subpel_filters: Align8<[[[int8_t; 8]; 15]; 6]> = Align8([
     [
         [
             0 as libc::c_int as int8_t,
@@ -2474,7 +2476,7 @@ pub static mut dav1d_mc_subpel_filters: [[[int8_t; 8]; 15]; 6] = [
             0 as libc::c_int as int8_t,
         ],
     ],
-];
+]);
 #[no_mangle]
 pub static mut dav1d_mc_warp_filter: [[int8_t; 8]; 193] = [
     [
@@ -5052,7 +5054,7 @@ pub static mut dav1d_resize_filter: [[int8_t; 8]; 64] = [
     ],
 ];
 #[no_mangle]
-pub static mut dav1d_sm_weights: [uint8_t; 128] = [
+pub static mut dav1d_sm_weights: Align16<[uint8_t; 128]> = Align16([
     0 as libc::c_int as uint8_t,
     0 as libc::c_int as uint8_t,
     255 as libc::c_int as uint8_t,
@@ -5181,7 +5183,7 @@ pub static mut dav1d_sm_weights: [uint8_t; 128] = [
     4 as libc::c_int as uint8_t,
     4 as libc::c_int as uint8_t,
     4 as libc::c_int as uint8_t,
-];
+]);
 #[no_mangle]
 pub static mut dav1d_dr_intra_derivative: [uint16_t; 44] = [
     0 as libc::c_int as uint16_t,

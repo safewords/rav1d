@@ -1,5 +1,7 @@
 use crate::include::stddef::*;
 use crate::include::stdint::*;
+#[cfg(all(feature = "asm", any(target_arch = "arm", target_arch = "aarch64")))]
+use crate::src::align::Align16;
 use ::libc;
 use cfg_if::cfg_if;
 extern "C" {
@@ -1082,8 +1084,8 @@ unsafe extern "C" fn cdef_filter_8x8_neon(
     damping: libc::c_int,
     edges: CdefEdgeFlags,
 ) {
-    let mut tmp_buf = [0; 200];
-    let mut tmp = tmp_buf
+    let mut tmp_buf = Align16([0; 200]);
+    let mut tmp = tmp_buf.0
         .as_mut_ptr()
         .offset(2 * 16)
         .offset(8);
