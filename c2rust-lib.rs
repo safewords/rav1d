@@ -156,16 +156,24 @@ pub mod yuv;
 } // mod output
 } // mod tools
 
-// NOTE: temporary code to support Linux and macOS, should be removed eventually
+// NOTE: temporary code to support Linux, Android, and macOS, should be removed eventually
 cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(any(target_os = "linux", target_os = "android"))] {
         extern "C" {
             pub static mut stdout: *mut libc::FILE;
             pub static mut stderr: *mut libc::FILE;
         }
 
-        unsafe fn errno_location() -> *mut libc::c_int {
-            libc::__errno_location()
+        cfg_if::cfg_if! {
+            if #[cfg(target_os = "android")] {
+                unsafe fn errno_location() -> *mut libc::c_int {
+                    libc::__errno()
+                }
+            } else {
+                unsafe fn errno_location() -> *mut libc::c_int {
+                    libc::__errno_location()
+                }
+            }
         }
     } else if #[cfg(target_os = "macos")] {
         extern "C" {
