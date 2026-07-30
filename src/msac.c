@@ -207,6 +207,8 @@ void dav1d_msac_init(MsacContext *const s, const uint8_t *const data,
 #endif
 }
 
+#if ARCH_X86_64
+
 // C2RUST:
 
 unsigned dav1d_msac_decode_symbol_adapt4(MsacContext *s, uint16_t *cdf,
@@ -246,3 +248,5 @@ unsigned dav1d_msac_decode_hi_tok(MsacContext *s, uint16_t *cdf)
 {
     return dav1d_msac_decode_hi_tok_impl(s, cdf);
 }
+
+#endif
