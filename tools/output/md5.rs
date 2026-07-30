@@ -1,4 +1,6 @@
 
+#![allow(static_mut_refs)]
+
 use crate::include::stdint::*;
 use ::libc;
 use crate::{stdout,stderr};

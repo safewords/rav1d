@@ -1,4 +1,5 @@
 #![allow(dangerous_implicit_autorefs)]
+#![allow(static_mut_refs)]
 
 use crate::include::stddef::*;
 use crate::include::stdint::*;

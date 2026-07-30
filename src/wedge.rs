@@ -1,3 +1,5 @@
+#![allow(static_mut_refs)]
+
 use crate::include::stdint::*;
 use crate::src::align::Align64;
 use ::libc;

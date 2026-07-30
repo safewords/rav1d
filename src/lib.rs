@@ -1,3 +1,5 @@
+#![allow(static_mut_refs)]
+
 use crate::include::stddef::*;
 use crate::include::stdint::*;
 use ::libc;
@@ -1256,22 +1258,25 @@ pub unsafe extern "C" fn dav1d_open(
             || dav1d_mem_pool_init(&mut (*c).refmvs_pool) != 0
             || dav1d_mem_pool_init(&mut (*c).cdf_pool) != 0)
         {
-            if (*c).allocator.alloc_picture_callback
-                == Some(
+            if (*c).allocator.alloc_picture_callback.is_some_and(|callback| {
+                ::core::ptr::fn_addr_eq(
+                    callback,
                     dav1d_default_picture_alloc
                         as unsafe extern "C" fn(
                             *mut Dav1dPicture,
                             *mut libc::c_void,
                         ) -> libc::c_int,
                 )
-                && (*c).allocator.release_picture_callback
-                    == Some(
-                        dav1d_default_picture_release
-                            as unsafe extern "C" fn(
-                                *mut Dav1dPicture,
-                                *mut libc::c_void,
-                            ) -> (),
-                    )
+            }) && (*c).allocator.release_picture_callback.is_some_and(|callback| {
+                ::core::ptr::fn_addr_eq(
+                    callback,
+                    dav1d_default_picture_release
+                        as unsafe extern "C" fn(
+                            *mut Dav1dPicture,
+                            *mut libc::c_void,
+                        ) -> (),
+                )
+            })
             {
                 if !((*c).allocator.cookie).is_null() {
                     current_block = 16409883578687858768;
@@ -1281,22 +1286,25 @@ pub unsafe extern "C" fn dav1d_open(
                     (*c).allocator.cookie = (*c).picture_pool as *mut libc::c_void;
                     current_block = 13619784596304402172;
                 }
-            } else if (*c).allocator.alloc_picture_callback
-                == Some(
+            } else if (*c).allocator.alloc_picture_callback.is_some_and(|callback| {
+                ::core::ptr::fn_addr_eq(
+                    callback,
                     dav1d_default_picture_alloc
                         as unsafe extern "C" fn(
                             *mut Dav1dPicture,
                             *mut libc::c_void,
                         ) -> libc::c_int,
                 )
-                || (*c).allocator.release_picture_callback
-                    == Some(
-                        dav1d_default_picture_release
-                            as unsafe extern "C" fn(
-                                *mut Dav1dPicture,
-                                *mut libc::c_void,
-                            ) -> (),
-                    )
+            }) || (*c).allocator.release_picture_callback.is_some_and(|callback| {
+                ::core::ptr::fn_addr_eq(
+                    callback,
+                    dav1d_default_picture_release
+                        as unsafe extern "C" fn(
+                            *mut Dav1dPicture,
+                            *mut libc::c_void,
+                        ) -> (),
+                )
+            })
             {
                 current_block = 16409883578687858768;
             } else {
