@@ -67,6 +67,7 @@ use crate::src::tables::TxfmInfo;
 use crate::include::common::intops::iclip;
 use crate::include::common::intops::imax;
 use crate::include::common::intops::imin;
+use crate::src::align::Align16;
 unsafe extern "C" fn decomp_tx(
     txa: *mut [[[uint8_t; 32]; 32]; 2],
     from: RectTxfmSize,
@@ -412,7 +413,7 @@ unsafe extern "C" fn mask_edges_inter(
         as *const TxfmInfo;
     let mut y: libc::c_int = 0;
     let mut x: libc::c_int = 0;
-    let mut txa: [[[[uint8_t; 32]; 32]; 2]; 2] = [[[[0; 32]; 32]; 2]; 2];
+    let mut txa: Align16<[[[[uint8_t; 32]; 32]; 2]; 2]> = Align16([[[[0; 32]; 32]; 2]; 2]);
     let mut y_off: libc::c_int = 0 as libc::c_int;
     let mut y_0: libc::c_int = 0 as libc::c_int;
     while y_0 < h4 {
@@ -420,7 +421,7 @@ unsafe extern "C" fn mask_edges_inter(
         let mut x_0: libc::c_int = 0 as libc::c_int;
         while x_0 < w4 {
             decomp_tx(
-                &mut *(*(*(*txa.as_mut_ptr().offset(0 as libc::c_int as isize))
+                &mut *(*(*(*txa.0.as_mut_ptr().offset(0 as libc::c_int as isize))
                     .as_mut_ptr()
                     .offset(0 as libc::c_int as isize))
                     .as_mut_ptr()

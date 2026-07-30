@@ -1,6 +1,8 @@
 #![allow(static_mut_refs)]
 
 use crate::include::stdint::*;
+use crate::src::align::Align16;
+use crate::src::align::Align32;
 use crate::src::align::Align64;
 use ::libc;
 extern "C" {
@@ -947,16 +949,16 @@ pub unsafe extern "C" fn dav1d_init_wedge_masks() {
         0x7bfb as libc::c_int as libc::c_uint,
     );
 }
-static mut ii_dc_mask: [uint8_t; 1024] = [0; 1024];
-static mut ii_nondc_mask_32x32: [[uint8_t; 1024]; 3] = [[0; 1024]; 3];
-static mut ii_nondc_mask_16x32: [[uint8_t; 512]; 3] = [[0; 512]; 3];
-static mut ii_nondc_mask_16x16: [[uint8_t; 256]; 3] = [[0; 256]; 3];
-static mut ii_nondc_mask_8x32: [[uint8_t; 256]; 3] = [[0; 256]; 3];
-static mut ii_nondc_mask_8x16: [[uint8_t; 128]; 3] = [[0; 128]; 3];
-static mut ii_nondc_mask_8x8: [[uint8_t; 64]; 3] = [[0; 64]; 3];
-static mut ii_nondc_mask_4x16: [[uint8_t; 64]; 3] = [[0; 64]; 3];
-static mut ii_nondc_mask_4x8: [[uint8_t; 32]; 3] = [[0; 32]; 3];
-static mut ii_nondc_mask_4x4: [[uint8_t; 16]; 3] = [[0; 16]; 3];
+static mut ii_dc_mask: Align64<[uint8_t; 1024]> = Align64([0; 1024]);
+static mut ii_nondc_mask_32x32: Align64<[[uint8_t; 1024]; 3]> = Align64([[0; 1024]; 3]);
+static mut ii_nondc_mask_16x32: Align64<[[uint8_t; 512]; 3]> = Align64([[0; 512]; 3]);
+static mut ii_nondc_mask_16x16: Align64<[[uint8_t; 256]; 3]> = Align64([[0; 256]; 3]);
+static mut ii_nondc_mask_8x32: Align64<[[uint8_t; 256]; 3]> = Align64([[0; 256]; 3]);
+static mut ii_nondc_mask_8x16: Align64<[[uint8_t; 128]; 3]> = Align64([[0; 128]; 3]);
+static mut ii_nondc_mask_8x8: Align64<[[uint8_t; 64]; 3]> = Align64([[0; 64]; 3]);
+static mut ii_nondc_mask_4x16: Align64<[[uint8_t; 64]; 3]> = Align64([[0; 64]; 3]);
+static mut ii_nondc_mask_4x8: Align32<[[uint8_t; 32]; 3]> = Align32([[0; 32]; 3]);
+static mut ii_nondc_mask_4x4: Align16<[[uint8_t; 16]; 3]> = Align16([[0; 16]; 3]);
 #[no_mangle]
 pub static mut dav1d_ii_masks: [[[*const uint8_t; 4]; 3]; 22] = [[[0
     as *const uint8_t; 4]; 3]; 22];
@@ -1028,7 +1030,7 @@ unsafe extern "C" fn build_nondc_ii_masks(
 #[cold]
 pub unsafe extern "C" fn dav1d_init_interintra_masks() {
     memset(
-        ii_dc_mask.as_mut_ptr() as *mut libc::c_void,
+        ii_dc_mask.0.as_mut_ptr() as *mut libc::c_void,
         32 as libc::c_int,
         (32 as libc::c_int * 32 as libc::c_int) as libc::c_ulong,
     );
@@ -1146,7 +1148,7 @@ unsafe extern "C" fn run_static_initializers() {
         [[0 as *const uint8_t; 4]; 3],
         [
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_32x32[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1158,7 +1160,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_16x32[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1170,7 +1172,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_16x16[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1184,7 +1186,7 @@ unsafe extern "C" fn run_static_initializers() {
         ],
         [
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_32x32[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1196,7 +1198,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_16x16[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1208,7 +1210,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_16x16[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1224,7 +1226,7 @@ unsafe extern "C" fn run_static_initializers() {
         [[0 as *const uint8_t; 4]; 3],
         [
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_16x32[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1236,7 +1238,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_8x32[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1248,7 +1250,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_8x16[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1262,7 +1264,7 @@ unsafe extern "C" fn run_static_initializers() {
         ],
         [
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_16x16[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1274,7 +1276,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_8x16[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1286,7 +1288,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_8x8[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1300,7 +1302,7 @@ unsafe extern "C" fn run_static_initializers() {
         ],
         [
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_16x16[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1312,7 +1314,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_8x8[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1324,7 +1326,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_8x8[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1340,7 +1342,7 @@ unsafe extern "C" fn run_static_initializers() {
         [[0 as *const uint8_t; 4]; 3],
         [
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_8x16[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1352,7 +1354,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_4x16[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1364,7 +1366,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_4x8[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1378,7 +1380,7 @@ unsafe extern "C" fn run_static_initializers() {
         ],
         [
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_8x8[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1390,7 +1392,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_4x8[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
@@ -1402,7 +1404,7 @@ unsafe extern "C" fn run_static_initializers() {
                     .as_mut_ptr() as *const uint8_t,
             ],
             [
-                ii_dc_mask.as_mut_ptr() as *const uint8_t,
+                ii_dc_mask.0.as_mut_ptr() as *const uint8_t,
                 (ii_nondc_mask_4x4[(II_VERT_PRED as libc::c_int - 1 as libc::c_int)
                     as usize])
                     .as_mut_ptr() as *const uint8_t,
