@@ -27,11 +27,13 @@ jobs:
         ]
     runs-on: ubuntu-latest
     steps:
+      - name: refresh apt package lists
+        run: sudo apt-get update
       - name: install prerequisites
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
           packages: meson nasm gcc-multilib
-          version: 3.0 # version of cache to load
+          version: 4.0 # version of cache to load
       - name: git checkout
         uses: actions/checkout@v4
         with:
