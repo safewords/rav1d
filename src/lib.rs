@@ -146,13 +146,17 @@ mod scan;
 mod tables;
 mod thread_task;
 mod warpmv;
+#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+pub mod wasm_thread;
 mod wedge;
 
 use std::ffi::{c_char, c_uint, c_void, CStr};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Once};
-use std::{cmp, mem, ptr, slice, thread};
+#[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
+use std::thread;
+use std::{cmp, mem, ptr, slice};
 
 use parking_lot::Mutex;
 pub use rust_api::*;
@@ -375,22 +379,31 @@ pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
             let thread_data = Arc::new(Rav1dTaskContextTaskThread::new(task_thread));
             let thread_data_copy = Arc::clone(&thread_data);
             let task = if n_tc > 1 {
+                #[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
                 let handle = thread::Builder::new()
                     // Don't set stack size like `dav1d` does.
                     // See <https://github.com/memorysafety/rav1d/issues/889>.
                     .name(format!("rav1d-worker-{n}"))
                     .spawn(|| rav1d_worker_task(thread_data_copy))
                     .unwrap();
+                // On wasm the embedder starts the thread (see `wasm_thread`);
+                // there is no handle, and no spawner means no threads.
+                #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+                let handle = {
+                    let _ = n;
+                    wasm_thread::spawn(|| rav1d_worker_task(thread_data_copy))
+                        .map_err(|()| Rav1dError::InvalidArgument)?
+                };
                 Rav1dContextTaskType::Worker(handle)
             } else {
                 Rav1dContextTaskType::Single(Mutex::new(Box::new(Rav1dTaskContext::new(
                     thread_data_copy,
                 ))))
             };
-            Rav1dContextTaskThread { task, thread_data }
+            Ok(Rav1dContextTaskThread { task, thread_data })
         })
         // TODO fallible allocation
-        .collect();
+        .collect::<Rav1dResult<_>>()?;
 
     let c = Rav1dContext {
         allocator: s.allocator.clone(),
@@ -423,10 +436,11 @@ pub(crate) fn rav1d_open(s: &Rav1dSettings) -> Rav1dResult<Arc<Rav1dContext>> {
     let c = c;
 
     for tc in c.tc.iter() {
-        if let Rav1dContextTaskType::Worker(handle) = &tc.task {
-            // Unpark each thread once we set its `thread_data.c`.
+        if let Rav1dContextTaskType::Worker(_) = &tc.task {
+            // Each worker thread waits on `c_set` for its `thread_data.c`
+            // (it may not even have started yet; see `wasm_thread`).
             *tc.thread_data.c.lock() = Some(Arc::clone(&c));
-            handle.thread().unpark();
+            tc.thread_data.c_set.notify_all();
         }
     }
 

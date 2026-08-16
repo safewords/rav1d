@@ -4,7 +4,7 @@ use std::ops::{Add, AddAssign, Deref};
 use std::process::abort;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
-use std::{cmp, mem, thread};
+use std::{cmp, mem};
 
 use atomig::{Atom, Atomic};
 use parking_lot::{Mutex, MutexGuard, RwLock, RwLockReadGuard};
@@ -759,9 +759,16 @@ fn delayed_fg_task<'l, 'ttd: 'l>(
 }
 
 pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
-    // The main thread will unpark us once `task_thread.c` is set.
-    thread::park();
-    let c = &*task_thread.c.lock().take().unwrap();
+    // `rav1d_open` sets `task_thread.c` and signals `c_set` once the context
+    // exists; on wasm this thread may only start after that (see `wasm_thread`).
+    let c = {
+        let mut c = task_thread.c.lock();
+        while c.is_none() {
+            task_thread.c_set.wait(&mut c);
+        }
+        c.take().unwrap()
+    };
+    let c = &*c;
     let mut tc = Rav1dTaskContext::new(task_thread);
 
     // We clone the Arc here for the lifetime of this function to avoid an

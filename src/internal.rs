@@ -3,6 +3,7 @@ use std::mem;
 use std::ops::{Deref, Range};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
+#[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
 use std::thread::JoinHandle;
 
 use atomig::{Atom, Atomic};
@@ -281,9 +282,18 @@ pub(crate) struct Rav1dContextRefs {
     pub refpoc: [c_uint; 7],
 }
 
+/// What `rav1d_open` keeps of a spawned worker thread: the `JoinHandle` on
+/// targets with `std::thread`, nothing on wasm where the embedder started it
+/// (see `wasm_thread`). Threads are told to exit through `die`, never joined.
+#[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
+pub(crate) type WorkerHandle = JoinHandle<()>;
+#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+pub(crate) type WorkerHandle = ();
+
 pub(crate) enum Rav1dContextTaskType {
-    /// Worker thread in a multi-threaded context.
-    Worker(JoinHandle<()>),
+    /// Worker thread in a multi-threaded context. The handle is only held
+    /// (dropping a `JoinHandle` detaches; the thread exits when told to `die`).
+    Worker(#[allow(dead_code)] WorkerHandle),
     /// Main thread in a single-threaded context. There are no worker threads so
     /// we need to store a Rav1dTaskContext for work that requires it.
     // This Rav1dTaskContext is heap-allocated because we don't want to bloat
@@ -1086,6 +1096,8 @@ pub(crate) struct Rav1dTaskContextTaskThread {
     pub flushed: RelaxedAtomic<bool>,
     pub die: RelaxedAtomic<bool>,
     pub c: Mutex<Option<Arc<Rav1dContext>>>,
+    /// Signalled by `rav1d_open` once `c` is set.
+    pub c_set: Condvar,
 }
 
 impl Rav1dTaskContextTaskThread {
@@ -1096,6 +1108,7 @@ impl Rav1dTaskContextTaskThread {
             flushed: Default::default(),
             die: Default::default(),
             c: Default::default(),
+            c_set: Condvar::new(),
         }
     }
 }
