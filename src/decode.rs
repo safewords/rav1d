@@ -4898,7 +4898,13 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
     ) {
         fc.task_thread.error.store(1, Ordering::Relaxed);
         let _ = mem::take(&mut *fc.in_cdf.try_write().unwrap());
-        if f.frame_hdr.as_ref().unwrap().refresh_context != 0 {
+        // The frame header can already be gone here (a broken temporal unit
+        // that never produced one, or a second error on the same frame);
+        // treat "no header" as "nothing to refresh" rather than panicking.
+        if f.frame_hdr
+            .as_ref()
+            .is_some_and(|hdr| hdr.refresh_context != 0)
+        {
             let _ = mem::take(&mut f.out_cdf);
         }
         for i in 0..7 {
