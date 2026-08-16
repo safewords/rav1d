@@ -4,6 +4,8 @@ use std::fmt::{self, Display, Formatter};
 
 use strum::FromRepr;
 
+use crate::c_types::{EAGAIN, EINVAL, ENOENT, ENOMEM, ENOPROTOOPT, ERANGE};
+
 /// Error enum return by various `rav1d` operations.
 #[derive(Clone, Copy, PartialEq, Eq, FromRepr, Debug)]
 #[repr(u8)]
@@ -22,7 +24,7 @@ pub enum Rav1dError {
     /// No entity.
     ///
     /// No Sequence Header OBUs were found in the buffer.
-    NoEntity = libc::ENOENT as u8,
+    NoEntity = ENOENT as u8,
 
     /// Try again.
     ///
@@ -32,27 +34,27 @@ pub enum Rav1dError {
     ///
     /// If this is returned by [`rav1d_get_picture`], then no decoded frames are pending
     /// currently and more data needs to be sent to the decoder.
-    TryAgain = libc::EAGAIN as u8,
+    TryAgain = EAGAIN as u8,
 
     /// Out of memory.
     ///
     /// Not enough memory is currently available for performing this operation.
-    OutOfMemory = libc::ENOMEM as u8,
+    OutOfMemory = ENOMEM as u8,
 
     /// Invalid argument.
     ///
     /// One of the arguments passed to the function, including the bitstream, is invalid.
-    InvalidArgument = libc::EINVAL as u8,
+    InvalidArgument = EINVAL as u8,
 
     /// Out of range.
     ///
     /// The frame size is larger than the limit.
-    OutOfRange = libc::ERANGE as u8,
+    OutOfRange = ERANGE as u8,
 
     /// Unsupported bitstream.
     ///
     /// The provided bitstream is not supported by `rav1d`.
-    UnsupportedBitstream = libc::ENOPROTOOPT as u8,
+    UnsupportedBitstream = ENOPROTOOPT as u8,
 }
 
 impl Rav1dError {
