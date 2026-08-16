@@ -26,6 +26,9 @@ use crate::strided::Strided as _;
 use crate::with_offset::WithOffset;
 use crate::wrap_fn_ptr::wrap_fn_ptr;
 
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+mod wasm;
+
 wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
@@ -98,6 +101,11 @@ fn loop_filter<BD: BitDepth>(
     wd: c_int,
     bd: BD,
 ) {
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    if BD::BITDEPTH == 8 {
+        return wasm::loop_filter::<BD>(dst, e, i, h, stridea, strideb, wd);
+    }
+
     let bitdepth_min_8 = bd.bitdepth() - 8;
     let [f, e, i, h] = [1, e, i, h].map(|n| (n as i32) << bitdepth_min_8);
 

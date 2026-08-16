@@ -30,6 +30,9 @@ use crate::tables::DAV1D_CDEF_DIRECTIONS;
 use crate::with_offset::WithOffset;
 use crate::wrap_fn_ptr::wrap_fn_ptr;
 
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+mod wasm;
+
 bitflags! {
     #[repr(transparent)]
     #[derive(Clone, Copy)]
@@ -259,6 +262,20 @@ fn cdef_filter_block_rust<BD: BitDepth>(
     let mut tmp = [0; TMP_STRIDE * TMP_STRIDE]; // `12 * 12` is the maximum value of `TMP_STRIDE * (h + 4)`.
 
     padding::<BD>(&mut tmp, dst, left, top, bottom, w, h, edges);
+
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    if BD::BITDEPTH == 8 {
+        return wasm::cdef_filter_block::<BD>(
+            dst,
+            &tmp,
+            pri_strength,
+            sec_strength,
+            dir,
+            damping,
+            w,
+            h,
+        );
+    }
 
     let tmp = tmp;
     let tmp_offset = 2 * TMP_STRIDE + 2;

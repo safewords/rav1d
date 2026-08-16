@@ -40,6 +40,9 @@ use crate::tables::{
 use crate::with_offset::WithOffset;
 use crate::wrap_fn_ptr::wrap_fn_ptr;
 
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+mod wasm;
+
 #[inline(never)]
 fn put_rust<BD: BitDepth>(
     dst: Rav1dPictureDataComponentOffset,
@@ -150,6 +153,14 @@ fn put_8tap_rust<BD: BitDepth>(
     (h_filter_type, v_filter_type): (Rav1dFilterMode, Rav1dFilterMode),
     bd: BD,
 ) {
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    if BD::BITDEPTH == 8
+        && w >= 8
+        && wasm::put_8tap::<BD>(dst, src, w, h, mx, my, (h_filter_type, v_filter_type))
+    {
+        return;
+    }
+
     let intermediate_bits = bd.get_intermediate_bits();
     let intermediate_rnd = 32 + (1 << 6 - intermediate_bits >> 1);
 
@@ -277,6 +288,14 @@ fn prep_8tap_rust<BD: BitDepth>(
     (h_filter_type, v_filter_type): (Rav1dFilterMode, Rav1dFilterMode),
     bd: BD,
 ) {
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    if BD::BITDEPTH == 8
+        && w >= 8
+        && wasm::prep_8tap::<BD>(tmp, src, w, h, mx, my, (h_filter_type, v_filter_type))
+    {
+        return;
+    }
+
     let intermediate_bits = bd.get_intermediate_bits();
     let fh = get_filter(mx, w, h_filter_type);
     let fv = get_filter(my, h, v_filter_type);
@@ -827,6 +846,11 @@ fn warp_affine_8x8_rust<BD: BitDepth>(
     const W: usize = 8;
     const H: usize = 15;
 
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    if BD::BITDEPTH == 8 {
+        return wasm::warp_affine_8x8::<BD>(dst, src, abcd, mx, my);
+    }
+
     let intermediate_bits = bd.get_intermediate_bits();
     let mut mid = [[0; W]; H];
 
@@ -877,6 +901,11 @@ fn warp_affine_8x8t_rust<BD: BitDepth>(
 ) {
     const W: usize = 8;
     const H: usize = 15;
+
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    if BD::BITDEPTH == 8 {
+        return wasm::warp_affine_8x8t::<BD>(tmp, tmp_stride, src, abcd, mx, my);
+    }
 
     let intermediate_bits = bd.get_intermediate_bits();
     let mut mid = [[0; W]; H];
